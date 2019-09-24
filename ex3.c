@@ -240,23 +240,14 @@ int main (int argc, char *argv[])
 			x2 = dz * gridk;
 			
 			coeff_values(coeff, x0, x1, x2, dx, dy, dz, 6);
-			
-			/*
-				theta = 0.;
-				gamma = -1.;
-				beta = 0.;
-				ast = gamma + beta * cos(theta) * cos(theta);
-				bst = 0.5 * beta * cos(theta) * sin(theta);
-				cst = gamma + beta * sin(theta) * sin(theta);
-				dst = -2. * ( ast + cst + 0. * h2 );
-			*/
-			
+		  			
 			/*0=a, 1=b, 2=c, 3=d, 4=e, 5=f*/
 			/*
 				xx 14 xx    10 04 09    xx 18 xx    ^
 				11 05 12    01 00 02    15 06 16    |			 
 				xx 13 xx    07 03 08    xx 17 xx    j i ->    k - - >			
 			*/
+			
 			values[i]    = coeff[5];
 			values[i+1]  = coeff[0];
 			values[i+2]  = coeff[0];
@@ -296,70 +287,6 @@ int main (int argc, char *argv[])
 	check_t = clock();
 	if (myid == 0)	printf("Stencils values set: t = %lf\n\n",
 				 (double)(check_t - start_t) / CLOCKS_PER_SEC);
-	
-	/* /\* 4. Incorporate the boundary conditions: go along each edge of */
-	/* 	 the domain and set the stencil entry that reaches to the boundary.*\/ */
-	/* { */
-	/* 	int bc_ilower[3]; */
-	/* 	int bc_iupper[3]; */
-	/* 	int nentries = 3; */
-	/* 	int nvalues  = nentries*n*n; /\*  number of stencil entries times the length */
-	/* 																 of one side of my grid box *\/ */
-	/* 	double *values; */
-	/* 	int stencil_indices[3]; */
-	/* 	values = (double*) calloc(nvalues, sizeof(double)); */
-		
-	/* 	/\* Recall: pi and pj describe position in the processor grid *\/ */
-	/* 	if (pi == 0) { */
-	/* 		/\* Bottom row of grid points *\/ */
-	/* 		for (j = 0; j < nvalues; j+=nentries) { */
-	/* 			values[j]   = 0.0; */
-	/* 			values[j+1] = 0.0; */
-	/* 			values[j+2] = 0.0; */
-	/* 		} */
-			
-	/* 		bc_ilower[0] = pi*n; */
-	/* 		bc_ilower[1] = pj*n; */
-	/* 		bc_ilower[2] = pk*n; */
-			
-	/* 		bc_iupper[0] = bc_ilower[0]; */
-	/* 		bc_iupper[1] = bc_ilower[1] + n-1; */
-	/* 		bc_iupper[2] = bc_ilower[2] + n-1; */
-			
-	/* 		stencil_indices[0] = 1; */
-	/* 		stencil_indices[1] = 7; */
-	/* 		stencil_indices[2] = 10; */
-			
-	/* 		HYPRE_StructMatrixSetBoxValues(A, bc_ilower, bc_iupper, nentries, */
-	/* 																	 stencil_indices, values); */
-	/* 	} */
-		
-	/* 	if (pi == N-1) { */
-	/* 		/\* upper row of grid points *\/ */
-	/* 		bc_ilower[0] = pi*n + n-1; */
-	/* 		bc_ilower[1] = pj*n; */
-	/* 		bc_ilower[2] = pk*n; */
-			
-	/* 		bc_iupper[0] = bc_ilower[0]; */
-	/* 		bc_iupper[1] = bc_ilower[1] + n-1; */
-	/* 		bc_iupper[2] = bc_ilower[2] + n-1; */
-
-	/* 		for (j = 0; j < nvalues; j+=nentries) { */
-	/* 			values[j]   = 0.0; */
-	/* 			values[j+1] = 0.0; */
-	/* 			values[j+2] = 0.0; */
-	/* 		} */
-			
-	/* 		stencil_indices[0] = 2; */
-	/* 		stencil_indices[1] = 8; */
-	/* 		stencil_indices[2] = 9; */
-			
-	/* 		HYPRE_StructMatrixSetBoxValues(A, bc_ilower, bc_iupper, nentries, */
-	/* 																	 stencil_indices, values); */
-	/* 	} */
-		
-	/* 	free(values); */
-	/* } */
 
 	/* 4. Incorporate the boundary conditions: go along each edge of
 		 the domain and set the stencil entry that reaches to the boundary.*/
