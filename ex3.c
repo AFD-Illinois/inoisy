@@ -7,12 +7,11 @@
 */
 
 #include <math.h>
+#include <time.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include "_hypre_utilities.h"
 #include "HYPRE_struct_ls.h"
-
-#include "vis.c"
 
 double ksq(double x0, double x1, double x2);
 
@@ -36,6 +35,9 @@ int main (int argc, char *argv[])
 	
 	int solver_id;
 	int n_pre, n_post;
+
+	clock_t start_t = clock();
+	clock_t check_t;
 	
 	HYPRE_StructGrid     grid;
 	HYPRE_StructStencil  stencil;
@@ -149,66 +151,76 @@ int main (int argc, char *argv[])
 		HYPRE_StructGridSetExtents(grid, ilower, iupper);
 
 		/* Set periodic boundary conditions on t and phi*/
-		int boundcon[3] = {0, (N*n), n};
+		int boundcon[3] = {0, (N*n), 0};
 		HYPRE_StructGridSetPeriodic(grid, boundcon);
 		
 		/* This is a collective call finalizing the grid assembly.
 			 The grid is now ``ready to be used'' */
 		HYPRE_StructGridAssemble(grid);
 	}
-	
+
+	#define NSTENCIL 27
 	/* 2. Define the discretization stencil */
 	{
 		/* Create an empty 3D, 27-pt stencil object */
-		HYPRE_StructStencilCreate(3, 27, &stencil);
+		HYPRE_StructStencilCreate(3, NSTENCIL, &stencil);
 		
 		/* Define the geometry of the stencil */
 		/*
 			22 14 21    10 04 09    26 18 25    ^
 			11 05 12    01 00 02    15 06 16    |
 			19 13 20    07 03 08    23 17 24    j i ->    k - - >
-		 */
+			
+		  Delete zero entries:
+	  	xx 14 xx    10 04 09    xx 18 xx    ^
+ 	 	  11 05 12    01 00 02    15 06 16    |			 
+	 	  xx 13 xx    07 03 08    xx 17 xx    j i ->    k - - >			
+		*/
 		{
 			int entry;
-			int offsets[27][3] = {{0,0,0},  
-														{-1,0,0}, {1,0,0}, 
-														{0,-1,0}, {0,1,0}, 
-														{0,0,-1}, {0,0,1}, 
-														{-1,-1,0}, {1,-1,0}, 
-														{1,1,0}, {-1,1,0}, 
-														{-1,0,-1}, {1,0,-1}, 
-														{0,-1,-1}, {0,1,-1}, 
-														{-1,0,1}, {1,0,1}, 
-														{0,-1,1}, {0,1,1}, 
-														{-1,-1,-1}, {1,-1,-1}, 
-														{1,1,-1}, {-1,1,-1}, 
-														{-1,-1,1}, {1,-1,1}, 
-														{1,1,1}, {-1,1,1} 
+			int offsets[NSTENCIL][3] = {{0,0,0},
+																	{-1,0,0}, {1,0,0}, 
+																	{0,-1,0}, {0,1,0}, 
+																	{0,0,-1}, {0,0,1}, 
+																	{-1,-1,0}, {1,-1,0}, 
+																	{1,1,0}, {-1,1,0}, 
+																	{-1,0,-1}, {1,0,-1}, 
+																	{0,-1,-1}, {0,1,-1}, 
+																	{-1,0,1}, {1,0,1}, 
+																	{0,-1,1}, {0,1,1}, 
+																	{-1,-1,-1}, {1,-1,-1}, 
+																	{1,1,-1}, {-1,1,-1}, 
+																	{-1,-1,1}, {1,-1,1}, 
+																	{1,1,1}, {-1,1,1}
 			};
 			
-			for (entry = 0; entry < 27; entry++)
+			for (entry = 0; entry < NSTENCIL; entry++)
 				HYPRE_StructStencilSetElement(stencil, entry, offsets[entry]);
 		}
 	}
+
+	check_t = clock();
+	if (myid == 0)	printf("Stencils initialized: t = %lf\n\n",
+												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
 	/* 3. Set up a Struct Matrix */
 	{
-		int nentries = 27;
+		int nentries = NSTENCIL;
 		int nvalues = nentries*n*n*n;
 		double *values;
-		int stencil_indices[27];
+		int stencil_indices[NSTENCIL];
 		
 		/* Create an empty matrix object */
 		HYPRE_StructMatrixCreate(MPI_COMM_WORLD, grid, stencil, &A);
 		
 		/* Indicate that the matrix coefficients are ready to be set */
 		HYPRE_StructMatrixInitialize(A);
-		
+
 		values = (double*) calloc(nvalues, sizeof(double));
-		
+
 		for (j = 0; j < nentries; j++)
 			stencil_indices[j] = j;
-		
+
 		/* Set the standard stencil at each grid point,
 			 we will fix the boundaries later */
 		for (i = 0; i < nvalues; i += nentries) {
@@ -241,9 +253,9 @@ int main (int argc, char *argv[])
 			
 			/*0=a, 1=b, 2=c, 3=d, 4=e, 5=f*/
 			/*
-				22 14 21    10 04 09    26 18 25    ^
-				11 05 12    01 00 02    15 06 16    |
-				19 13 20    07 03 08    23 17 24    j i ->    k - - >
+				xx 14 xx    10 04 09    xx 18 xx    ^
+				11 05 12    01 00 02    15 06 16    |			 
+				xx 13 xx    07 03 08    xx 17 xx    j i ->    k - - >			
 			*/
 			values[i]    = coeff[5];
 			values[i+1]  = coeff[0];
@@ -264,6 +276,7 @@ int main (int argc, char *argv[])
 			values[i+16] = 0.;
 			values[i+17] = -coeff[3];
 			values[i+18] = coeff[3];
+			
 			values[i+19] = 0.;
 			values[i+20] = 0.;
 			values[i+21] = 0.;
@@ -273,12 +286,16 @@ int main (int argc, char *argv[])
 			values[i+25] = 0.;
 			values[i+26] = 0.;
 		}
-		
+
 		HYPRE_StructMatrixSetBoxValues(A, ilower, iupper, nentries,
 																	 stencil_indices, values);
 		
 		free(values);
 	}
+
+	check_t = clock();
+	if (myid == 0)	printf("Stencils values set: t = %lf\n\n",
+				 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
 	/* /\* 4. Incorporate the boundary conditions: go along each edge of */
 	/* 	 the domain and set the stencil entry that reaches to the boundary.*\/ */
@@ -349,11 +366,11 @@ int main (int argc, char *argv[])
 	{
 		int bc_ilower[3];
 		int bc_iupper[3];
-		int nentries = 6;
+		int	nentries = 6;
 		int nvalues  = nentries*n*n; /*  number of stencil entries times the length
 																	 of one side of my grid box */
 		double *values;
-		int stencil_indices[6];
+		int stencil_indices[nentries];
 		values = (double*) calloc(nvalues, sizeof(double));
 		
 		/* Recall: pi and pj describe position in the processor grid */
@@ -431,10 +448,14 @@ int main (int argc, char *argv[])
 	/* This is a collective call finalizing the matrix assembly.
 		 The matrix is now ``ready to be used'' */
 	HYPRE_StructMatrixAssemble(A);
+
+	check_t = clock();
+	if (myid == 0) printf("Boundary conditions set: t = %lf\n\n",
+												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
 	/* 5. Set up Struct Vectors for b and x */
 	{
-		int    nvalues = n*n;
+		int    nvalues = n*n*n;
 		double *values;
 		
 		values = (double*) calloc(nvalues, sizeof(double));
@@ -464,7 +485,7 @@ int main (int argc, char *argv[])
 		HYPRE_StructVectorAssemble(b);
 		HYPRE_StructVectorAssemble(x);
 	}
-	
+
 	/* 6. Set up and use a struct solver
 		 (Solver options can be found in the Reference Manual.) */
 	if (solver_id == 0) {
@@ -490,7 +511,7 @@ int main (int argc, char *argv[])
 															HYPRE_StructSMGSetup, precond);
 		HYPRE_StructPCGSetup(solver, A, b, x);
 		HYPRE_StructPCGSolve(solver, A, b, x);
-		
+
 		/* Get some info on the run */
 		HYPRE_StructPCGGetNumIterations(solver, &num_iterations);
 		HYPRE_StructPCGGetFinalRelativeResidualNorm(solver, &final_res_norm);
@@ -510,7 +531,7 @@ int main (int argc, char *argv[])
 		/* Logging must be on to get iterations and residual norm info below */
 		HYPRE_StructSMGSetPrintLevel(solver, 2);
 		HYPRE_StructSMGSetLogging(solver, 1);
-		
+
 		/* Setup and solve */
 		HYPRE_StructSMGSetup(solver, A, b, x);
 		HYPRE_StructSMGSolve(solver, A, b, x);
@@ -522,8 +543,13 @@ int main (int argc, char *argv[])
 		/* Clean up */
 		HYPRE_StructSMGDestroy(solver);
 	}
+
+	check_t = clock();
+	if (myid == 0) printf("Solver finished: t = %lf\n\n",
+												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
-	/* Save the solution for GLVis visualization, see vis/glvis-ex3.sh */
+	
+	/* Output data */
 	if (vis) {
 		FILE *file;
 		char filename[255];
@@ -550,11 +576,7 @@ int main (int argc, char *argv[])
 		
 		fflush(file);
 		fclose(file);
-		free(values);
-		
-		/* save global finite element mesh */
-		if (myid == 0)
-			GLVis_PrintGlobalSquareMesh("vis/ex3.mesh", N*n*n-1);
+		free(values);		
 	}
 	
 	if (myid == 0) {
@@ -563,6 +585,11 @@ int main (int argc, char *argv[])
 		printf("Final Relative Residual Norm = %g\n", final_res_norm);
 		printf("\n");
 	}
+
+	check_t = clock();
+	if (myid == 0) printf("Data output: t = %lf\n\n",
+												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
+
 	
 	/* Free memory */
 	HYPRE_StructGridDestroy(grid);
