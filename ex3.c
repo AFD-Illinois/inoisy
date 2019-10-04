@@ -1,9 +1,10 @@
 /*
    Compile with:   make ex3
 
-   Sample run:     mpirun -np 16 ex3 -n 33 -solver 0 -v 1 1
-
+   Sample run:     mpirun -np 16 ex3 -n 33 -solver 0
+	                 mpiexec -n 16 ./ex3 -n 33 -solver 0
    To see options: ex3 -help
+
 */
 
 #include <math.h>
@@ -129,6 +130,11 @@ int main (int argc, char *argv[])
 	dx = 2. * M_PI / (N*n); 
 	dy = 2. * M_PI / (N*n);
 	dz = 2. * M_PI / (n);
+
+	/* pi = 0; */
+	/* pj = 0; */
+	/* pk = myid; */
+	
 	pj = myid / N;
 	pi = myid - pj*N;
 	pk = 0;
@@ -151,7 +157,7 @@ int main (int argc, char *argv[])
 		HYPRE_StructGridSetExtents(grid, ilower, iupper);
 
 		/* Set periodic boundary conditions on t and phi*/
-		int boundcon[3] = {0, (N*n), 0};
+		int boundcon[3] = {0, N*n, n};
 		HYPRE_StructGridSetPeriodic(grid, boundcon);
 		
 		/* This is a collective call finalizing the grid assembly.
