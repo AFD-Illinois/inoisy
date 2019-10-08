@@ -1,10 +1,10 @@
 /*
    Compile with:   make grf
 
-   Sample run:     mpirun -np 16 grf -n 33 -solver 0 -v 1 1
+   Sample run:     mpirun -np 4 grf -n 32 -solver 0 -v 1 1
+                   mpiexec -n 4 ./grf -n 32 -solver 0 -v 1 1
 
    To see options: grf -help
-
 */
 
 #include <math.h>
@@ -22,7 +22,8 @@ double bet1(double x0, double x1, double x2);
 
 double bet2(double x0, double x1, double x2);
 
-void coeff_values(double* coeff, double x0, double x1, double x2, double dx, double dy, double dz, int index);
+void coeff_values(double* coeff, double x0, double x1, double x2,
+									double dx, double dy, double dz, int index);
 
 int main (int argc, char *argv[])
 {
@@ -30,7 +31,7 @@ int main (int argc, char *argv[])
 	
 	int myid, num_procs;
 	
-	int n, N, pi, pj, pk;
+	int ni, nj, nk, pi, pj, pk, npi, npj, npk;
 	double dx, dy, dz;
 	int ilower[3], iupper[3];
 	
@@ -51,7 +52,7 @@ int main (int argc, char *argv[])
 	int num_iterations;
 	double final_res_norm;
 	
-	int vis;
+	int vis, timer;
 	
 	/* Initialize MPI */
 	MPI_Init(&argc, &argv);
@@ -59,12 +60,17 @@ int main (int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 	
 	/* Set defaults */
-	n = 32;
+	ni = 32; /* nj and nk are set equal to ni later */
+	npi = 1;
+	npj = 1;
+	npk = num_procs; /* default processor grid is 1 x 1 x N */
 	solver_id = 0;
 	n_pre  = 1;
 	n_post = 1;
-	vis = 0;
-	
+	vis = 1; /* visualize data by default */
+	timer = 0;
+
+	/* Initiialize rng */
 	const gsl_rng_type *T;
 	gsl_rng *rstate;
 	gsl_rng_env_setup();
@@ -74,13 +80,49 @@ int main (int argc, char *argv[])
 	
 	/* Parse command line */
 	{
-		int arg_index = 0;
+		int arg_index   = 0;
 		int print_usage = 0;
+		int check_pgrid = 0;
 		
 		while (arg_index < argc) {
 			if ( strcmp(argv[arg_index], "-n") == 0 ) {
 				arg_index++;
-				n = atoi(argv[arg_index++]);
+				ni = atoi(argv[arg_index++]);
+			}
+			else {
+				arg_index++;
+			}
+		}
+		nj = ni;
+		nk = ni;
+		
+		arg_index = 0;
+		while (arg_index < argc) {
+			if ( strcmp(argv[arg_index], "-ni") == 0 ) {
+				arg_index++;
+				ni = atoi(argv[arg_index++]);
+			}
+			else if ( strcmp(argv[arg_index], "-nj") == 0 ) {
+				arg_index++;
+				nj = atoi(argv[arg_index++]);
+			}
+			else if ( strcmp(argv[arg_index], "-nk") == 0 ) {
+				arg_index++;
+				nk = atoi(argv[arg_index++]);
+			}
+			else if ( strcmp(argv[arg_index], "-pgrid") == 0 ) {
+				arg_index++;
+				if (arg_index >= argc - 2) {
+					check_pgrid = 1;
+					break;
+				}
+				npi = atoi(argv[arg_index++]);
+				npj = atoi(argv[arg_index++]);
+				npk = atoi(argv[arg_index++]);
+				if ( num_procs != (npi * npj * npk) ) {
+					check_pgrid = 1;
+					break;
+				}
 			}
 			else if ( strcmp(argv[arg_index], "-solver") == 0 ) {
 				arg_index++;
@@ -91,9 +133,13 @@ int main (int argc, char *argv[])
 				n_pre = atoi(argv[arg_index++]);
 				n_post = atoi(argv[arg_index++]);
 			}
-			else if ( strcmp(argv[arg_index], "-vis") == 0 ) {
+			else if ( strcmp(argv[arg_index], "-dryrun") == 0 ) {
 				arg_index++;
-				vis = 1;
+				vis = 0;
+			}
+			else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
+				arg_index++;
+				timer = 1;
 			}
 			else if ( strcmp(argv[arg_index], "-help") == 0 ) {
 				print_usage = 1;
@@ -104,49 +150,58 @@ int main (int argc, char *argv[])
 			}
 		}
 		
-		if ((print_usage) && (myid == 0)) {
-			printf("\n");
-			printf("Usage: %s [<options>]\n", argv[0]);
-			printf("\n");
-			printf("  -n <n>              : problem size per processor (default: 33)\n");
-			printf("  -solver <ID>        : solver ID\n");
-			printf("                        0  - PCG with SMG precond (default)\n");
-			printf("                        1  - SMG\n");
-			printf("  -v <n_pre> <n_post> : number of pre and post relaxations (default: 1 1)\n");
-			printf("  -vis                : save the solution for GLVis visualization\n");
-			printf("\n");
-		}
-		
 		if (print_usage) {
+			if (myid == 0) {
+				printf("\n");
+				printf("Usage: %s [<options>]\n", argv[0]);
+				printf("\n");
+				printf("  -n <n>                : General grid side length per processor (default: 32).\n");
+				printf("  -ni <n> (or nj/nk)    : Grid side length for specific side per processor\n");
+				printf("                          (default: 32). If both -n and -ni are specified, ni\n");
+				printf("                          will overwrite n for that side only. \n");
+				printf("  -pgrid <pi> <pj> <pk> : Layout of processor grid. (default: 1 x 1 x num_procs)\n");
+				printf("                          The product of pi * pj * pk must equal num_proc.\n");
+				printf("  -solver <ID>          : solver ID\n");
+				printf("                          0  - PCG with SMG precond (default)\n");
+				printf("                          1  - SMG\n");
+				printf("  -v <n_pre> <n_post>   : Number of pre and post relaxations (default: 1 1).\n");
+				printf("  -dryrun               : Run solver w/o data output.\n");
+				printf("  -timer                : Time each step on processor zero.\n");
+				printf("\n");
+			}
 			MPI_Finalize();
 			return (0);
 		}
+
+		if (check_pgrid) {
+			if (myid ==0) {
+				printf("Error: Processor grid does not match the total number of processors. \n");
+				printf("       npi * npj * npk must equal num_proc (see -help). \n");
+			}
+			MPI_Finalize();
+			return (0);
+		}	
 	}
 	
-	/* Figure out the processor grid (N x N x 1).  The local problem
-		 size for the interior nodes is indicated by n (n x n x n).
+	/* Figure out the processor grid (npi x npj x npk).  The local problem
+		 size for the interior nodes is indicated by (ni x nj x nk).
 		 pi and pj and pk indicate position in the processor grid. */
-	N  = sqrt(num_procs);
-	dx = 2. * M_PI / (N*n); 
-	dy = 2. * M_PI / (N*n);
-	dz = 2. * M_PI / (n);
+	dx = 2. * M_PI / (npi * ni); 
+	dy = 2. * M_PI / (npj * nj);
+	dz = 2. * M_PI / (128);
 
-	/* pi = 0; */
-	/* pj = 0; */
-	/* pk = myid; */
-	
-	pj = myid / N;
-	pi = myid - pj*N;
-	pk = 0;
-	
+	pk = myid / (npi * npj);
+	pj = (myid - pk * npi * npj) / npi;
+	pi = myid - pk * npi * npj - pj * npi;
+		
 	/* Figure out the extents of each processor's piece of the grid. */
-	ilower[0] = pi*n;
-	ilower[1] = pj*n;
-	ilower[2] = pk*n;
+	ilower[0] = pi * ni;
+	ilower[1] = pj * nj;
+	ilower[2] = pk * nk;
 	
-	iupper[0] = ilower[0] + n-1;
-	iupper[1] = ilower[1] + n-1;
-	iupper[2] = ilower[2] + n-1;
+	iupper[0] = ilower[0] + ni - 1;
+	iupper[1] = ilower[1] + nj - 1;
+	iupper[2] = ilower[2] + nk - 1;
 	
 	/* 1. Set up a grid */
 	{
@@ -157,7 +212,7 @@ int main (int argc, char *argv[])
 		HYPRE_StructGridSetExtents(grid, ilower, iupper);
 
 		/* Set periodic boundary conditions on t and phi*/
-		int boundcon[3] = {0, N*n, n};
+		int boundcon[3] = {0, npj * nj, npk * nk};
 		HYPRE_StructGridSetPeriodic(grid, boundcon);
 		
 		/* This is a collective call finalizing the grid assembly.
@@ -165,10 +220,15 @@ int main (int argc, char *argv[])
 		HYPRE_StructGridAssemble(grid);
 	}
 
-	#define NSTENCIL 27
+	check_t = clock();
+	if ( (myid == 0) && (timer) )
+		printf("Stencils initialized: t = %lf\n\n",
+					 (double)(check_t - start_t) / CLOCKS_PER_SEC);
+	
+#define NSTENCIL 19
 	/* 2. Define the discretization stencil */
 	{
-		/* Create an empty 3D, 27-pt stencil object */
+		/* Create an empty 3D, 19-pt stencil object */
 		HYPRE_StructStencilCreate(3, NSTENCIL, &stencil);
 		
 		/* Define the geometry of the stencil */
@@ -193,11 +253,11 @@ int main (int argc, char *argv[])
 																	{-1,0,-1}, {1,0,-1}, 
 																	{0,-1,-1}, {0,1,-1}, 
 																	{-1,0,1}, {1,0,1}, 
-																	{0,-1,1}, {0,1,1}, 
-																	{-1,-1,-1}, {1,-1,-1}, 
-																	{1,1,-1}, {-1,1,-1}, 
-																	{-1,-1,1}, {1,-1,1}, 
-																	{1,1,1}, {-1,1,1}
+																	{0,-1,1}, {0,1,1}
+																	/* {-1,-1,-1}, {1,-1,-1}, */
+																	/* {1,1,-1}, {-1,1,-1}, */
+																	/* {-1,-1,1}, {1,-1,1}, */
+																	/* {1,1,1}, {-1,1,1} */
 			};
 			
 			for (entry = 0; entry < NSTENCIL; entry++)
@@ -205,14 +265,10 @@ int main (int argc, char *argv[])
 		}
 	}
 
-	check_t = clock();
-	if (myid == 0)	printf("Stencils initialized: t = %lf\n\n",
-												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
-	
 	/* 3. Set up a Struct Matrix */
 	{
 		int nentries = NSTENCIL;
-		int nvalues = nentries*n*n*n;
+		int nvalues = nentries * ni * nj * nk;
 		double *values;
 		int stencil_indices[NSTENCIL];
 		
@@ -235,11 +291,11 @@ int main (int argc, char *argv[])
 			int gridi, gridj, gridk, temp;
 
 			temp = i / nentries;
-			gridk = temp / (n * n);
-			gridj = (temp - n * n * gridk) / n;
-			gridi = temp - n * n * gridk + (pi - gridj) * n;
-			gridj += pj * n;
-			gridk += pk * n;
+			gridk = temp / (ni * nj);
+			gridj = (temp - ni * nj * gridk) / ni;
+			gridi = temp - ni * nj * gridk + (pi - gridj) * ni;
+			gridj += pj * nj;
+			gridk += pk * nk;
 			
 			x0 = dx * gridi;
 			x1 = dy * gridj;
@@ -274,14 +330,14 @@ int main (int argc, char *argv[])
 			values[i+17] = -coeff[3];
 			values[i+18] = coeff[3];
 			
-			values[i+19] = 0.;
-			values[i+20] = 0.;
-			values[i+21] = 0.;
-			values[i+22] = 0.;
-			values[i+23] = 0.;
-			values[i+24] = 0.;
-			values[i+25] = 0.;
-			values[i+26] = 0.;
+			/* values[i+19] = 0.; */
+			/* values[i+20] = 0.; */
+			/* values[i+21] = 0.; */
+			/* values[i+22] = 0.; */
+			/* values[i+23] = 0.; */
+			/* values[i+24] = 0.; */
+			/* values[i+25] = 0.; */
+			/* values[i+26] = 0.; */
 		}
 
 		HYPRE_StructMatrixSetBoxValues(A, ilower, iupper, nentries,
@@ -291,17 +347,18 @@ int main (int argc, char *argv[])
 	}
 
 	check_t = clock();
-	if (myid == 0)	printf("Stencils values set: t = %lf\n\n",
-				 (double)(check_t - start_t) / CLOCKS_PER_SEC);
-
+	if ( (myid == 0) && (timer) )
+		printf("Stencils values set: t = %lf\n\n",
+					 (double)(check_t - start_t) / CLOCKS_PER_SEC);
+	
 	/* 4. Incorporate the boundary conditions: go along each edge of
 		 the domain and set the stencil entry that reaches to the boundary.*/
 	{
 		int bc_ilower[3];
 		int bc_iupper[3];
 		int	nentries = 6;
-		int nvalues  = nentries*n*n; /*  number of stencil entries times the length
-																	 of one side of my grid box */
+		int nvalues  = nentries * nj * nk; /* number of stencil entries times the 
+																					length of one side of my grid box */
 		double *values;
 		int stencil_indices[nentries];
 		values = (double*) calloc(nvalues, sizeof(double));
@@ -313,22 +370,22 @@ int main (int argc, char *argv[])
 
 			coeff_values(coeff, 0., 0., 0., dx, dy, dz, 6);
 			
-			for (j = 0; j < nvalues; j+=nentries) {
-				values[j]   = coeff[5]+coeff[0];
+			for (j = 0; j < nvalues; j += nentries) {
+				values[j]   = coeff[5] + coeff[0];
 				values[j+1] = 0.0;
-				values[j+2] = coeff[2]+coeff[1];
-				values[j+3] = coeff[2]-coeff[1];
+				values[j+2] = coeff[2] + coeff[1];
+				values[j+3] = coeff[2] - coeff[1];
 				values[j+4] = 0.0;
 				values[j+5] = 0.0;
 			}
 			
-			bc_ilower[0] = pi*n;
-			bc_ilower[1] = pj*n;
-			bc_ilower[2] = pk*n;
+			bc_ilower[0] = pi * ni;
+			bc_ilower[1] = pj * nj;
+			bc_ilower[2] = pk * nk;
 			
 			bc_iupper[0] = bc_ilower[0];
-			bc_iupper[1] = bc_ilower[1] + n-1;
-			bc_iupper[2] = bc_ilower[2] + n-1;
+			bc_iupper[1] = bc_ilower[1] + nj - 1;
+			bc_iupper[2] = bc_ilower[2] + nk - 1;
 			
 			stencil_indices[0] = 0;
 			stencil_indices[1] = 1;
@@ -341,25 +398,25 @@ int main (int argc, char *argv[])
 																		 stencil_indices, values);
 		}
 		
-		if (pi == N-1) {
+		if (pi == npi - 1) {
 			/* upper row of grid points */
 			double coeff[6];
 			
-			bc_ilower[0] = pi*n + n-1;
-			bc_ilower[1] = pj*n;
-			bc_ilower[2] = pk*n;
+			bc_ilower[0] = pi * ni + ni - 1;
+			bc_ilower[1] = pj * nj;
+			bc_ilower[2] = pk * nk;
 			
 			bc_iupper[0] = bc_ilower[0];
-			bc_iupper[1] = bc_ilower[1] + n-1;
-			bc_iupper[2] = bc_ilower[2] + n-1;
+			bc_iupper[1] = bc_ilower[1] + nj - 1;
+			bc_iupper[2] = bc_ilower[2] + nk - 1;
 
 			coeff_values(coeff, bc_ilower[0] * dx, 0., 0., dx, dy, dz, 6);
 		  
-			for (j = 0; j < nvalues; j+=nentries) {
-				values[j]   = coeff[5]+coeff[0];
+			for (j = 0; j < nvalues; j += nentries) {
+				values[j]   = coeff[5] + coeff[0];
 				values[j+1] = 0.0;
-				values[j+2] = coeff[2]-coeff[1];
-				values[j+3] = coeff[2]+coeff[1];
+				values[j+2] = coeff[2] - coeff[1];
+				values[j+3] = coeff[2] + coeff[1];
 				values[j+4] = 0.0;
 				values[j+5] = 0.0;
 			}
@@ -383,12 +440,13 @@ int main (int argc, char *argv[])
 	HYPRE_StructMatrixAssemble(A);
 
 	check_t = clock();
-	if (myid == 0) printf("Boundary conditions set: t = %lf\n\n",
-												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
+	if ( (myid == 0) && (timer) )
+		printf("Boundary conditions set: t = %lf\n\n",
+					 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
 	/* 5. Set up Struct Vectors for b and x */
 	{
-		int    nvalues = n*n*n;
+		int    nvalues = ni * nj * nk;
 		double *values;
 		
 		values = (double*) calloc(nvalues, sizeof(double));
@@ -402,7 +460,7 @@ int main (int argc, char *argv[])
 		HYPRE_StructVectorInitialize(x);
 		
 		/* Set the values */
-		for (i = 0; i < nvalues; i ++) {
+		for (i = 0; i < nvalues; i++) {
 			values[i] = gsl_ran_gaussian(rstate, 1.);
 		}
 		HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
@@ -478,23 +536,23 @@ int main (int argc, char *argv[])
 	}
 
 	check_t = clock();
-	if (myid == 0) printf("Solver finished: t = %lf\n\n",
-												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
-	
+	if ( (myid == 0) && (timer) )
+		printf("Solver finished: t = %lf\n\n",
+					 (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
 	/* Output data */
 	if (vis) {
 		FILE *file;
 		char filename[255];
 		
-		int nvalues = n*n*n;
+		int nvalues = ni * nj * nk;
 		double *values = (double*) calloc(nvalues, sizeof(double));
 		
 		/* get the local solution */
 		HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);
 		
 		sprintf(filename, "%s.%06d", "vis/ex3.sol", myid);
-		if ((file = fopen(filename, "w")) == NULL) {
+		if ( (file = fopen(filename, "w")) == NULL ) {
 			printf("Error: can't open output file %s\n", filename);
 			MPI_Finalize();
 			exit(1);
@@ -502,10 +560,10 @@ int main (int argc, char *argv[])
 		
 		/* save solution with global unknown numbers */
 		int l = 0;
-		for (k = 0; k < n; k++)
-			for (j = 0; j < n; j++)
-				for (i = 0; i < n; i++)
-					fprintf(file, "%06d %.14e\n", pk*N*n*n*n+pj*N*n*n+pi*n+k*N*n*n+j*N*n+i, values[l++]);
+		for (k = 0; k < nk; k++)
+			for (j = 0; j < nj; j++)
+				for (i = 0; i < ni; i++)
+					fprintf(file, "%06d %.14e\n", k*ni*nj+j*ni+i, values[l++]);
 		
 		fflush(file);
 		fclose(file);
@@ -520,9 +578,10 @@ int main (int argc, char *argv[])
 	}
 
 	check_t = clock();
-	if (myid == 0) printf("Data output: t = %lf\n\n",
-												 (double)(check_t - start_t) / CLOCKS_PER_SEC);
-
+	if ( (myid == 0) && (vis) && (timer) )
+		printf("Data output: t = %lf\n\n",
+					 (double)(check_t - start_t) / CLOCKS_PER_SEC);
+	
 	
 	/* Free memory */
 	HYPRE_StructGridDestroy(grid);
