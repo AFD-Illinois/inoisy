@@ -2,7 +2,7 @@
 # Compiler and external dependences
 ########################################################################
 CC        = mpicc
-HYPRE_DIR = /usr/local/hypre
+HYPRE_DIR = /home/dl6/hypre-2.11.2/src/hypre
 
 ########################################################################
 # Compiling and linking options
