@@ -1,7 +1,7 @@
 ########################################################################
 # Compiler and external dependences
 ########################################################################
-CC        = mpicc
+CC        = h5pcc
 HYPRE_DIR = /home/dl6/hypre-2.11.2/src/hypre
 
 ########################################################################
@@ -11,28 +11,12 @@ COPTS     = -g -Wall
 CINCLUDES = -I$(HYPRE_DIR)/include
 CDEFS     = -DHAVE_CONFIG_H -DHYPRE_TIMING
 CFLAGS    = $(COPTS) $(CINCLUDES) $(CDEFS)
-# FOPTS     = -g
-# FINCLUDES = $(CINCLUDES)
-# FFLAGS    = $(FOPTS) $(FINCLUDES)
-# CXXOPTS   = $(COPTS) -Wno-deprecated
-# CXXINCLUDES = $(CINCLUDES) -I..
-# CXXDEFS   = $(CDEFS)
-# IFLAGS_BXX = 
-# CXXFLAGS  = $(CXXOPTS) $(CXXINCLUDES) $(CXXDEFS) $(IFLAGS_BXX)
-# IF90FLAGS = 
-# F90FLAGS = $(FFLAGS) $(IF90FLAGS)
+
 
 
 LINKOPTS  = $(COPTS)
-LIBS      = -L$(HYPRE_DIR)/lib -lHYPRE -lm -lgsl -lgslcblas
+LIBS      = -L$(HYPRE_DIR)/lib -lHYPRE -lm -lgsl -lgslcblas -shlib
 LFLAGS    = $(LINKOPTS) $(LIBS) -lstdc++
-# LFLAGS_B =\
-#  -L${HYPRE_DIR}/lib\
-#  -lbHYPREClient-C\
-#  -lbHYPREClient-CX\
-#  -lbHYPREClient-F\
-#  -lbHYPRE\
-#  -lsidl -ldl -lxml2
 
 ########################################################################
 # Rules for compiling the source files
@@ -54,7 +38,7 @@ default: all
 ########################################################################
 # Compile grf
 ########################################################################
-grf: grf.o
+grf: grf.o hdf5_utils.o
 	$(CC) -o $@ $^ $(LFLAGS)
 
 ########################################################################
@@ -68,7 +52,6 @@ poisson: poisson.o
 ########################################################################
 clean:
 	rm -f $(ALLPROGS:=.o)
-	cd vis; make clean
 distclean: clean
 	rm -f $(ALLPROGS) $(ALLPROGS:=*~)
 	rm -fr README*
