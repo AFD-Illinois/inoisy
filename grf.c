@@ -2,7 +2,7 @@
   Compile with:   make grf
   
   Sample run:     mpirun -np 4 grf -n 32 -solver 0 -v 1 1
-  mpiexec -n 4 ./grf -n 32 -solver 0 -v 1 1
+                  mpiexec -n 4 ./grf -n 32 -solver 0 -v 1 1
   
   To see options: grf -help
 */
@@ -28,7 +28,7 @@ void coeff_values(double* coeff, double x0, double x1, double x2,
 
 int main (int argc, char *argv[])
 {
-  int i, j;
+  int i, j, k;
   
   int myid, num_procs;
   
@@ -555,41 +555,112 @@ int main (int argc, char *argv[])
 
   /* Output data */
   if (vis) {
-    char filename[255], buffer[255];
-		
-    int nvalues = ni * nj * nk;
-    double *values = (double*) calloc(nvalues, sizeof(double));
-    time_t rawtime;
-    struct tm * timeinfo;
-    
     /* get the local solution */
-    HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-    strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
+    int nvalues    = ni * nj * nk;
+    double *values = (double*)calloc(nvalues, sizeof(double));
     
-    sprintf(filename, "%s/%d_%d_%d_%s.h5", "vis",
-	    npi * ni, npj * nj, npk * nk, buffer);
+    HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);
+    
+    /* find the min, max, and ligthcurve */
+    double localmin = values[0];
+    double localmax = values[0];
+    double globalmin, globalmax;
+    
+    double *local_lc  = (double*)calloc(npk * nk, sizeof(double));
+    double *global_lc = (double*)calloc(npk * nk, sizeof(double));
+    
+    i = 0;
+    for (k = pk * nk; k < (pk + 1) * nk; k++) {
+      for (j = 0; j < ni * nj; j++) {
+	local_lc[k] += values[i];
+	if (values[i] < localmin)
+	  localmin = values[i];
+	if (values[i] > localmax)
+	  localmax = values[i];
+	i++;
+      }
+    }
+    
+    MPI_Allreduce(&localmin, &globalmin, 1, MPI_DOUBLE,
+    	       MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(&localmax, &globalmax, 1, MPI_DOUBLE,
+    	       MPI_MAX, MPI_COMM_WORLD);
+    MPI_Reduce(local_lc, global_lc, npk * nk, MPI_DOUBLE,
+    	       MPI_SUM, 0, MPI_COMM_WORLD);
+    
+    char filename[255];		
+    
+    if (myid == 0) {
+      time_t rawtime;
+      struct tm * timeinfo;
+      char buffer[255];
+      
+      time(&rawtime);
+      timeinfo = localtime(&rawtime);
+      strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
+      
+      sprintf(filename, "%s/%d_%d_%d_%s.h5", "vis",
+	      npi * ni, npj * nj, npk * nk, buffer);
+    }
+    
+    MPI_Bcast(&filename, 255, MPI_CHAR, 0, MPI_COMM_WORLD);
     hdf5_create(filename);
-
+    
     /* save solution to output file*/
     hdf5_set_directory("/");
     hdf5_make_directory("data");
     hdf5_set_directory("/data/");
+
+    /* note: HYPRE has k as the slowest varying, opposite of HDF5 */
+    {
+      hsize_t fdims[3]  = {npk * nk, npj * nj, npi * ni};
+      hsize_t fstart[3] = {pk * nk, pj * nj, pi * ni};
+      hsize_t fcount[3] = {nk, nj, ni};
+      hsize_t mdims[3]  = {nk, nj, ni};
+      hsize_t mstart[3] = {0, 0, 0};
+      hdf5_write_array(values, "data", 3, fdims, fstart, fcount,
+		       mdims, mstart, H5T_NATIVE_DOUBLE);
+    }
+
+    /* output lightcurve and parameters */
+    {
+      hsize_t fdims  = npk * nk;
+      hsize_t fstart = 0;
+      hsize_t fcount = 0;
+      hsize_t mdims  = 0;
+      hsize_t mstart = 0;
+
+      if (myid == 0) {
+	fcount = npk * nk;
+	mdims  = npk * nk;
+      }
+	
+      hdf5_write_array(global_lc, "lightcurve", 1, &fdims, &fstart, &fcount,
+		       &mdims, &mstart, H5T_NATIVE_DOUBLE);
+    }
     
-    hsize_t fdims[3]  = {npi * ni, npj * nj, npk * nk};
-    hsize_t fstart[3] = {pi * ni, pj * nj, pk * nk};
-    hsize_t fcount[3] = {ni, nj, nk};
-    hsize_t mdims[3]  = {ni, nj, nk};
-    hsize_t mstart[3] = {0, 0, 0};
-    hdf5_write_array(values, "data", 3, fdims, fstart, fcount,
-    		     mdims, mstart, H5T_NATIVE_DOUBLE);
+    hdf5_set_directory("/");
+    hdf5_make_directory("params");
+    hdf5_set_directory("/params/");
+    
+    hdf5_write_single_val(&npi, "npi", H5T_STD_I32LE);
+    hdf5_write_single_val(&npj, "npj", H5T_STD_I32LE);
+    hdf5_write_single_val(&npk, "npk", H5T_STD_I32LE);
+    hdf5_write_single_val(&ni, "ni", H5T_STD_I32LE);
+    hdf5_write_single_val(&nj, "nj", H5T_STD_I32LE);
+    hdf5_write_single_val(&nk, "nk", H5T_STD_I32LE);
+    hdf5_write_single_val(&gsl_rng_default_seed, "seed", H5T_STD_U64LE);
+    
+    hdf5_write_single_val(&globalmin, "min", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&globalmax, "max", H5T_IEEE_F64LE);
     
     hdf5_close();
-    free(values);		
+    
+    free(values);
+    free(local_lc);
+    free(global_lc);
   }
-
+  
   check_t = clock();
   if ( (myid == 0) && (vis) && (timer) )
     printf("Data output: t = %lf\n\n",

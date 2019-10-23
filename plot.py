@@ -48,7 +48,7 @@ x = R * np.cos(Theta)
 y = R * np.sin(Theta)
 for i in range(nstart,nend):
     var = data[i,:,:]
-    plt.pcolormesh(x,y,var, cmap='jet', vmin=Min, vmax=Max/3)
+    plt.pcolormesh(x,y,var, cmap='jet', vmin=Min, vmax=Max)
     plt.axis('equal')
     plt.savefig(output+str(i)+'.png')
     plt.clf()
