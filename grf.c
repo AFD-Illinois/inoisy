@@ -34,6 +34,7 @@ int main (int argc, char *argv[])
   
   int ni, nj, nk, pi, pj, pk, npi, npj, npk;
   double dx, dy, dz;
+  //  double mass, mdot, rmin, rmax, period;
   int ilower[3], iupper[3];
   
   int solver_id;
@@ -53,7 +54,7 @@ int main (int argc, char *argv[])
   int num_iterations;
   double final_res_norm;
   
-  int vis, timer;
+  int output, timer;
   
   /* Initialize MPI */
   MPI_Init(&argc, &argv);
@@ -61,15 +62,22 @@ int main (int argc, char *argv[])
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   
   /* Set defaults */
-  ni = 32; /* nj and nk are set equal to ni later */
+  ni  = 32; /* nj and nk are set equal to ni later */
   npi = 1;
   npj = 1;
   npk = num_procs; /* default processor grid is 1 x 1 x N */
   solver_id = 0;
   n_pre  = 1;
   n_post = 1;
-  vis = 1; /* visualize data by default */
-  timer = 0;
+  output = 1; /* output data by default */
+  timer  = 0;
+
+  // TODO read parameters as inputs
+  /* mass   = 1.E6; /\* in solar masses*\/ */
+  /* mdot   = 1.E-7; /\* in solar masses per year *\/ */
+  /* rmin   = 3.; /\* radius and time in terms of M *\/ */
+  /* rmax   = 10.;  */
+  /* period = 20000. */
   
   /* Initiialize rng */
   const gsl_rng_type *T;
@@ -136,7 +144,7 @@ int main (int argc, char *argv[])
       }
       else if ( strcmp(argv[arg_index], "-dryrun") == 0 ) {
 	arg_index++;
-	vis = 0;
+	output = 0;
       }
       else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
 	arg_index++;
@@ -554,7 +562,7 @@ int main (int argc, char *argv[])
   }	
 
   /* Output data */
-  if (vis) {
+  if (output) {
     /* get the local solution */
     int nvalues    = ni * nj * nk;
     double *values = (double*)calloc(nvalues, sizeof(double));
@@ -599,7 +607,7 @@ int main (int argc, char *argv[])
       timeinfo = localtime(&rawtime);
       strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
       
-      sprintf(filename, "%s/%d_%d_%d_%s.h5", "vis",
+      sprintf(filename, "%s/%d_%d_%d_%s.h5", "output",
 	      npi * ni, npj * nj, npk * nk, buffer);
     }
     
@@ -662,7 +670,7 @@ int main (int argc, char *argv[])
   }
   
   check_t = clock();
-  if ( (myid == 0) && (vis) && (timer) )
+  if ( (myid == 0) && (output) && (timer) )
     printf("Data output: t = %lf\n\n",
 	   (double)(check_t - start_t) / CLOCKS_PER_SEC);
 	
@@ -681,20 +689,19 @@ int main (int argc, char *argv[])
   return (0);
 }
 
-
 double ksq(double x0, double x1, double x2)
 {
-  return 1.;// + log(1. + x0);
+  return 1.;// + log(1. + x0 * log(10.) / (2. * M_PI) );
 }
 
 double gam(double x0, double x1, double x2)
 {
-  return 1.;// * (1. + x0 / (2. * M_PI));
+  return 1.;// * (1. + x0 * log(10.) / (2. * M_PI));
 }
 
 double bet1(double x0, double x1, double x2)
 {
-  return 36.;// * (1. - 0.75 * erf(0.5*x0));
+  return 36.;// * (1. - 0.75 * erf(0.5 * x0 * log(10.) / (2 * M_PI) ));
 }
 
 double bet2(double x0, double x1, double x2)
@@ -706,7 +713,7 @@ void coeff_values(double* coeff, double x0, double x1, double x2, double dx, dou
 {
   double theta, psi, gamma, beta1, beta2;
   theta = -7. * M_PI / 18.;
-  psi = atan( exp( 4. - 1.5 * ( 2. * dx + x0 / 2. ) ) );
+  psi   = atan( exp( 4. - 1.5 * ( 2. * dx + x0 / 2. ) ) );
   gamma = gam(x0, x1, x2);
   beta1 = bet1(x0, x1, x2);
   beta2 = bet2(x0, x1, x2);
