@@ -24,7 +24,7 @@ double bet1(double x0, double x1, double x2);
 double bet2(double x0, double x1, double x2);
 
 void coeff_values(double* coeff, double x0, double x1, double x2,
-		  double dx, double dy, double dz, int index);
+		  double dx, double dy, double dz, double mass, int index);
 
 int main (int argc, char *argv[])
 {
@@ -34,7 +34,6 @@ int main (int argc, char *argv[])
   
   int ni, nj, nk, pi, pj, pk, npi, npj, npk;
   double dx, dy, dz;
-  //  double mass, mdot, rmin, rmax, period;
   int ilower[3], iupper[3];
   
   int solver_id;
@@ -72,13 +71,14 @@ int main (int argc, char *argv[])
   output = 1; /* output data by default */
   timer  = 0;
 
+  double mass, mdot, rmin, rmax, period;
   // TODO read parameters as inputs
-  /* mass   = 1.E6; /\* in solar masses*\/ */
-  /* mdot   = 1.E-7; /\* in solar masses per year *\/ */
-  /* rmin   = 3.; /\* radius and time in terms of M *\/ */
-  /* rmax   = 10.;  */
-  /* period = 20000. */
-  
+  mass   = 1.E6; /* in solar masses*/
+  mdot   = 1.E-7; /* in solar masses per year */
+  rmin   = 2.; /* radius and time in terms of M */
+  rmax   = 100.;
+  period = 640000.;
+ 
   /* Initiialize rng */
   const gsl_rng_type *T;
   gsl_rng *rstate;
@@ -195,9 +195,9 @@ int main (int argc, char *argv[])
   /* Figure out the processor grid (npi x npj x npk).  The local problem
      size for the interior nodes is indicated by (ni x nj x nk).
      pi and pj and pk indicate position in the processor grid. */
-  dx = 2. * M_PI / (npi * ni); 
+  dx = (log(rmax) - log(rmin)) / (npi * ni); 
   dy = 2. * M_PI / (npj * nj);
-  dz = 2. * M_PI / (128);
+  dz = period / (npk * nk);
   
   pk = myid / (npi * npj);
   pj = (myid - pk * npi * npj) / npi;
@@ -214,18 +214,13 @@ int main (int argc, char *argv[])
   
   /* 1. Set up a grid */
   {
-    /* Create an empty 3D grid object */
     HYPRE_StructGridCreate(MPI_COMM_WORLD, 3, &grid);
-    
-    /* Add a new box to the grid */
     HYPRE_StructGridSetExtents(grid, ilower, iupper);
     
     /* Set periodic boundary conditions on t and phi*/
     int boundcon[3] = {0, npj * nj, npk * nk};
     HYPRE_StructGridSetPeriodic(grid, boundcon);
     
-    /* This is a collective call finalizing the grid assembly.
-       The grid is now ``ready to be used'' */
     HYPRE_StructGridAssemble(grid);
   }
   
@@ -237,7 +232,6 @@ int main (int argc, char *argv[])
 #define NSTENCIL 19
   /* 2. Define the discretization stencil */
   {
-    /* Create an empty 3D, 19-pt stencil object */
     HYPRE_StructStencilCreate(3, NSTENCIL, &stencil);
     
     /* Define the geometry of the stencil */
@@ -281,10 +275,7 @@ int main (int argc, char *argv[])
     double *values;
     int stencil_indices[NSTENCIL];
 		
-    /* Create an empty matrix object */
     HYPRE_StructMatrixCreate(MPI_COMM_WORLD, grid, stencil, &A);
-		
-    /* Indicate that the matrix coefficients are ready to be set */
     HYPRE_StructMatrixInitialize(A);
 
     values = (double*) calloc(nvalues, sizeof(double));
@@ -306,11 +297,11 @@ int main (int argc, char *argv[])
       gridj += pj * nj;
       gridk += pk * nk;
 			
-      x0 = dx * gridi;
+      x0 = log(rmin) + dx * gridi;
       x1 = dy * gridj;
       x2 = dz * gridk;
 			
-      coeff_values(coeff, x0, x1, x2, dx, dy, dz, 6);
+      coeff_values(coeff, x0, x1, x2, dx, dy, dz, mass, 6);
 		  			
       /*0=a, 1=b, 2=c, 3=d, 4=e, 5=f*/
       /*
@@ -377,7 +368,7 @@ int main (int argc, char *argv[])
       /* Bottom row of grid points */
       double coeff[6];
 
-      coeff_values(coeff, 0., 0., 0., dx, dy, dz, 6);
+      coeff_values(coeff, log(rmin), 0., 0., dx, dy, dz, mass, 6);
 			
       for (j = 0; j < nvalues; j += nentries) {
 	values[j]   = coeff[5] + coeff[0];
@@ -419,7 +410,7 @@ int main (int argc, char *argv[])
       bc_iupper[1] = bc_ilower[1] + nj - 1;
       bc_iupper[2] = bc_ilower[2] + nk - 1;
 
-      coeff_values(coeff, bc_ilower[0] * dx, 0., 0., dx, dy, dz, 6);
+      coeff_values(coeff, log(rmax) - dx, 0., 0., dx, dy, dz, mass, 6);
 		  
       for (j = 0; j < nvalues; j += nentries) {
 	values[j]   = coeff[5] + coeff[0];
@@ -443,9 +434,7 @@ int main (int argc, char *argv[])
 		
     free(values);
   }
-	
-  /* This is a collective call finalizing the matrix assembly.
-     The matrix is now ``ready to be used'' */
+  
   HYPRE_StructMatrixAssemble(A);
 
   check_t = clock();
@@ -460,11 +449,9 @@ int main (int argc, char *argv[])
 		
     values = (double*) calloc(nvalues, sizeof(double));
 		
-    /* Create an empty vector object */
     HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &b);
     HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &x);
 		
-    /* Indicate that the vector coefficients are ready to be set */
     HYPRE_StructVectorInitialize(b);
     HYPRE_StructVectorInitialize(x);
 		
@@ -480,8 +467,6 @@ int main (int argc, char *argv[])
 		
     free(values);
 		
-    /* This is a collective call finalizing the vector assembly.
-       The vector is now ``ready to be used'' */
     HYPRE_StructVectorAssemble(b);
     HYPRE_StructVectorAssemble(x);
   }
@@ -563,39 +548,127 @@ int main (int argc, char *argv[])
 
   /* Output data */
   if (output) {
-    /* get the local solution */
-    int nvalues    = ni * nj * nk;
-    double *values = (double*)calloc(nvalues, sizeof(double));
+    /* Get the local raw data */
+    int nvalues = ni * nj * nk;
     
-    HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);
+    double *raw = (double*)calloc(nvalues, sizeof(double));
+    double *env = (double*)calloc(nvalues, sizeof(double));
     
-    /* find the min, max, and ligthcurve */
-    double localmin = values[0];
-    double localmax = values[0];
-    double globalmin, globalmax;
+    HYPRE_StructVectorGetBoxValues(x, ilower, iupper, raw);  
+  
+    /* Find statistics for raw data and envelope */
+    double avg_raw = 0.;
+    double avg_env = 0.;
+    double var_raw = 0.;
+    double var_env = 0.;
+    double min_raw = raw[0];
+    double max_raw = raw[0];
+    double min_env = env[0];
+    double max_env = env[0];
     
-    double *local_lc  = (double*)calloc(npk * nk, sizeof(double));
-    double *global_lc = (double*)calloc(npk * nk, sizeof(double));
-    
-    i = 0;
-    for (k = pk * nk; k < (pk + 1) * nk; k++) {
-      for (j = 0; j < ni * nj; j++) {
-	local_lc[k] += values[i];
-	if (values[i] < localmin)
-	  localmin = values[i];
-	if (values[i] > localmax)
-	  localmax = values[i];
-	i++;
-      }
+    double *lc_raw = (double*)calloc(npk * nk, sizeof(double));
+    double *lc_env = (double*)calloc(npk * nk, sizeof(double));
+
+    /* Calculate mean and variance for raw data */
+    {
+      for(i = 0; i < nvalues; i++)
+	avg_raw += raw[i];
+      
+      MPI_Allreduce(MPI_IN_PLACE, &avg_raw, 1, MPI_DOUBLE,
+		    MPI_SUM, MPI_COMM_WORLD);
+      
+      avg_raw /= (npi * npj * npk * nvalues);
+      
+      /* Second pass for variance */
+      for (i = 0; i < nvalues; i++)
+	var_raw += (raw[i] - avg_raw) * (raw[i] - avg_raw);
+      
+      MPI_Allreduce(MPI_IN_PLACE, &var_raw, 1, MPI_DOUBLE,
+		    MPI_SUM, MPI_COMM_WORLD);
+      
+      var_raw /= (npi * npj * npk * nvalues - 1);
     }
     
-    MPI_Allreduce(&localmin, &globalmin, 1, MPI_DOUBLE,
-    	       MPI_MIN, MPI_COMM_WORLD);
-    MPI_Allreduce(&localmax, &globalmax, 1, MPI_DOUBLE,
-    	       MPI_MAX, MPI_COMM_WORLD);
-    MPI_Reduce(local_lc, global_lc, npk * nk, MPI_DOUBLE,
-    	       MPI_SUM, 0, MPI_COMM_WORLD);
+    /* Add envelope and calculate envelope average */
+    {
+      int l = 0;
+      double radius, factor;
+      factor = 10.;
+      for (k = 0; k < nk; k++) {
+	for (j = 0; j < nj; j++) {
+	  for (i = 0; i < ni; i++) {
+	    radius = rmin * exp( (i + pi * ni) * dx )
+	      + factor * rmin - rmin;
+	    env[l] = 3. * mdot
+	      * ( 1. - sqrt( rmin * exp(-1. * dx) * factor / radius) )
+	      / ( 8. * M_PI * pow(radius , 3.) )
+	      * exp( 0.5 * (raw[l] - avg_raw) / sqrt(var_raw) );
+	      //* (1. + 0.5 * (raw[l] - avg_raw) / sqrt(var_raw) );
+
+	    /* envelope is 3/(8PI)*mdot*GM/r^3*(1-sqrt(r0/r))
+	       in units of Msolar*c^2 per r^2 per year, where r = GM/c^2 
+	       and c = 1 */
+	    //TODO fix units
+	    
+	    avg_env += env[l];
+
+	    l++;
+	  }
+	}
+      }
+      
+      MPI_Allreduce(MPI_IN_PLACE, &avg_env, 1, MPI_DOUBLE,
+		    MPI_SUM, MPI_COMM_WORLD);
+
+      avg_env /= (npi * npj * npk * nvalues);    
+    }
     
+    /* Find min, max, lightcurve, var_env */
+    {
+      i = 0;
+      for (k = pk * nk; k < (pk + 1) * nk; k++) {
+	for (j = 0; j < ni * nj; j++) {
+	  lc_raw[k] += raw[i];
+	  lc_env[k] += env[i];
+	  if (env[i] < min_env)
+	    min_env = env[i];
+	  if (env[i] > max_env)
+	    max_env = env[i];
+	  var_env += (env[i] - avg_env) * (env[i] - avg_env);
+	  i++;
+	}
+      }
+      
+      MPI_Allreduce(MPI_IN_PLACE, &var_env, 1, MPI_DOUBLE,
+		    MPI_SUM, MPI_COMM_WORLD);      
+
+      var_env /= (npi * npj * npk * nvalues - 1);
+    }
+
+    // TODO turn allreduce into reduce for min, max, and var
+    // (currently required for hdf5_write_single_val)
+    MPI_Allreduce(MPI_IN_PLACE, &min_raw, 1, MPI_DOUBLE,
+		  MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &max_raw, 1, MPI_DOUBLE,
+		  MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &min_env, 1, MPI_DOUBLE,
+		  MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &max_env, 1, MPI_DOUBLE,
+		  MPI_MAX, MPI_COMM_WORLD);
+    if (myid == 0) {
+      MPI_Reduce(MPI_IN_PLACE, lc_raw, npk * nk, MPI_DOUBLE,
+		 MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(MPI_IN_PLACE, lc_env, npk * nk, MPI_DOUBLE,
+		 MPI_SUM, 0, MPI_COMM_WORLD);
+    }
+    else {
+      MPI_Reduce(lc_raw, lc_raw, npk * nk, MPI_DOUBLE,
+		 MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(lc_env, lc_env, npk * nk, MPI_DOUBLE,
+		 MPI_SUM, 0, MPI_COMM_WORLD);
+    }
+
+    /* File i/o */
     char filename[255];		
     
     if (myid == 0) {
@@ -609,15 +682,18 @@ int main (int argc, char *argv[])
       
       sprintf(filename, "%s/%d_%d_%d_%s.h5", "output",
 	      npi * ni, npj * nj, npk * nk, buffer);
+
+      printf("%s\n\n", filename);
     }
     
     MPI_Bcast(&filename, 255, MPI_CHAR, 0, MPI_COMM_WORLD);
     hdf5_create(filename);
     
-    /* save solution to output file*/
+    /* Save solution to output file*/
     hdf5_set_directory("/");
     hdf5_make_directory("data");
     hdf5_set_directory("/data/");
+    // TODO create further heirarchy in file structure
 
     /* note: HYPRE has k as the slowest varying, opposite of HDF5 */
     {
@@ -626,11 +702,14 @@ int main (int argc, char *argv[])
       hsize_t fcount[3] = {nk, nj, ni};
       hsize_t mdims[3]  = {nk, nj, ni};
       hsize_t mstart[3] = {0, 0, 0};
-      hdf5_write_array(values, "data", 3, fdims, fstart, fcount,
+      
+      hdf5_write_array(raw, "data_raw", 3, fdims, fstart, fcount,
+		       mdims, mstart, H5T_NATIVE_DOUBLE);  
+      hdf5_write_array(env, "data_env", 3, fdims, fstart, fcount,
 		       mdims, mstart, H5T_NATIVE_DOUBLE);
     }
-
-    /* output lightcurve and parameters */
+    
+    /* Output lightcurve and parameters */
     {
       hsize_t fdims  = npk * nk;
       hsize_t fstart = 0;
@@ -643,14 +722,24 @@ int main (int argc, char *argv[])
 	mdims  = npk * nk;
       }
 	
-      hdf5_write_array(global_lc, "lightcurve", 1, &fdims, &fstart, &fcount,
+      hdf5_write_array(lc_raw, "lc_raw", 1, &fdims, &fstart, &fcount,
+		       &mdims, &mstart, H5T_NATIVE_DOUBLE);
+      hdf5_write_array(lc_env, "lc_env", 1, &fdims, &fstart, &fcount,
 		       &mdims, &mstart, H5T_NATIVE_DOUBLE);
     }
     
     hdf5_set_directory("/");
     hdf5_make_directory("params");
     hdf5_set_directory("/params/");
-    
+
+    hdf5_write_single_val(&mass, "mass", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&mdot, "mdot", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&rmin, "rmin", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&rmax, "rmax", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dx, "dr", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dy, "dphi", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dz, "dt", H5T_IEEE_F64LE);
+
     hdf5_write_single_val(&npi, "npi", H5T_STD_I32LE);
     hdf5_write_single_val(&npj, "npj", H5T_STD_I32LE);
     hdf5_write_single_val(&npk, "npk", H5T_STD_I32LE);
@@ -659,33 +748,44 @@ int main (int argc, char *argv[])
     hdf5_write_single_val(&nk, "nk", H5T_STD_I32LE);
     hdf5_write_single_val(&gsl_rng_default_seed, "seed", H5T_STD_U64LE);
     
-    hdf5_write_single_val(&globalmin, "min", H5T_IEEE_F64LE);
-    hdf5_write_single_val(&globalmax, "max", H5T_IEEE_F64LE);
+    hdf5_set_directory("/");
+    hdf5_make_directory("stats");
+    hdf5_set_directory("/stats/");
+    hdf5_write_single_val(&min_raw, "min_raw", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&max_raw, "max_raw", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&avg_raw, "avg_raw", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&var_raw, "var_raw", H5T_IEEE_F64LE);
+
+    hdf5_write_single_val(&min_env, "min_env", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&max_env, "max_env", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&avg_env, "avg_env", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&var_env, "var_env", H5T_IEEE_F64LE);
     
     hdf5_close();
+
+    check_t = clock();
+    if ( (myid == 0) && (timer) )
+      printf("Data output: t = %lf\n\n",
+	     (double)(check_t - start_t) / CLOCKS_PER_SEC);
     
-    free(values);
-    free(local_lc);
-    free(global_lc);
+    free(raw);
+    free(env);
+    free(lc_raw);
+    free(lc_env);
   }
   
-  check_t = clock();
-  if ( (myid == 0) && (output) && (timer) )
-    printf("Data output: t = %lf\n\n",
-	   (double)(check_t - start_t) / CLOCKS_PER_SEC);
-	
-  /* Free memory */
+  /* Free HYPRE memory */
   HYPRE_StructGridDestroy(grid);
   HYPRE_StructStencilDestroy(stencil);
   HYPRE_StructMatrixDestroy(A);
   HYPRE_StructVectorDestroy(b);
   HYPRE_StructVectorDestroy(x);
-	
+		
   /* Finalize MPI */
   MPI_Finalize();
 	
   gsl_rng_free(rstate);
-	
+  
   return (0);
 }
 
@@ -706,14 +806,19 @@ double bet1(double x0, double x1, double x2)
 
 double bet2(double x0, double x1, double x2)
 {
-  return 100.;
+  return 300000.;// * exp(x0);
 }
 
-void coeff_values(double* coeff, double x0, double x1, double x2, double dx, double dy, double dz, int index)
+void coeff_values(double* coeff, double x0, double x1, double x2, double dx,
+		  double dy, double dz, double mass, int index)
 {
   double theta, psi, gamma, beta1, beta2;
   theta = -7. * M_PI / 18.;
-  psi   = atan( exp( 4. - 1.5 * ( 2. * dx + x0 / 2. ) ) );
+  /* phi = arctan(omega) = arctan(sqrt(GM)/r^(3/2))
+         = arctan(c^3/(GMe^(3x/2))) since r=GMe^x/c^2)
+     c^3/(GM) is canceled out by unit conversion
+  */
+  psi   = atan( exp( -1.5 * x0 ) );
   gamma = gam(x0, x1, x2);
   beta1 = bet1(x0, x1, x2);
   beta2 = bet2(x0, x1, x2);
