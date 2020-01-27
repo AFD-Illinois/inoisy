@@ -77,7 +77,7 @@ int main (int argc, char *argv[])
   mdot   = 1.E-7; /* in solar masses per year */
   rmin   = 2.; /* radius and time in terms of M */
   rmax   = 100.;
-  period = 640000.;
+  period = 40000.;
  
   /* Initiialize rng */
   const gsl_rng_type *T;
@@ -625,17 +625,22 @@ int main (int argc, char *argv[])
     
     /* Find min, max, lightcurve, var_env */
     {
-      i = 0;
+      int l = 0;
+      double area;
       for (k = pk * nk; k < (pk + 1) * nk; k++) {
-	for (j = 0; j < ni * nj; j++) {
-	  lc_raw[k] += raw[i];
-	  lc_env[k] += env[i];
-	  if (env[i] < min_env)
-	    min_env = env[i];
-	  if (env[i] > max_env)
-	    max_env = env[i];
-	  var_env += (env[i] - avg_env) * (env[i] - avg_env);
-	  i++;
+	for (j = 0; j < nj; j++) {
+	  for (i = 0; i < ni; i++) {
+	    area = 0.5 * exp( 2. * (i + pi * ni) * dx ) *
+	      ( exp( 2. * dx ) - 1. ) * dy;
+	    lc_raw[k] += raw[l] * area;
+	    lc_env[k] += env[l] * area;
+	    if (env[l] < min_env)
+	      min_env = env[l];
+	    if (env[l] > max_env)
+	      max_env = env[l];
+	    var_env += (env[l] - avg_env) * (env[l] - avg_env);
+	    l++;
+	  }
 	}
       }
       
@@ -806,7 +811,7 @@ double bet1(double x0, double x1, double x2)
 
 double bet2(double x0, double x1, double x2)
 {
-  return 300000.;// * exp(x0);
+  return 16000. * exp(x0);
 }
 
 void coeff_values(double* coeff, double x0, double x1, double x2, double dx,
