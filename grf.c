@@ -77,7 +77,7 @@ int main (int argc, char *argv[])
   mdot   = 1.E-7; /* in solar masses per year */
   rmin   = 2.; /* radius and time in terms of M */
   rmax   = 100.;
-  period = 40000.;
+  period = 5000.;
  
   /* Initiialize rng */
   const gsl_rng_type *T;
@@ -150,7 +150,9 @@ int main (int argc, char *argv[])
 	arg_index++;
 	timer = 1;
       }
-      else if ( strcmp(argv[arg_index], "-help") == 0 ) {
+      else if ( strcmp(argv[arg_index], "help")   == 0 ||
+		strcmp(argv[arg_index], "-help")  == 0 ||
+		strcmp(argv[arg_index], "--help") == 0 ) {
 	print_usage = 1;
 	break;
       }
@@ -176,6 +178,9 @@ int main (int argc, char *argv[])
 	printf("  -v <n_pre> <n_post>   : Number of pre and post relaxations (default: 1 1).\n");
 	printf("  -dryrun               : Run solver w/o data output.\n");
 	printf("  -timer                : Time each step on processor zero.\n");
+	printf("\n");
+	printf("Sample run:     mpirun -np 4 grf -n 32 -nk 64 -pgrid 2 2 1 -solver 0\n");
+	printf("                mpiexec -n 4 ./grf -n 32 -nk 64 -pgrid 2 2 1 -solver 0\n");
 	printf("\n");
       }
       MPI_Finalize();
