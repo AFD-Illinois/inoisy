@@ -5,6 +5,11 @@
                   mpiexec -n 4 ./grf -n 32 -solver 0 -v 1 1
   
   To see options: grf -help
+
+  Index naming conventions:
+    x0 = t, x1 = r, x2 = phi
+    Given a stencil {i,j,k}, HYPRE has k as the slowest varying index. 
+    Thus, the indices correspond to i = x2, j = x1, k = x0. 
 */
 
 #include <math.h>
@@ -24,7 +29,7 @@ double bet1(double x0, double x1, double x2);
 double bet2(double x0, double x1, double x2);
 
 void coeff_values(double* coeff, double x0, double x1, double x2,
-		  double dx, double dy, double dz, double mass, int index);
+		  double dx0, double dx1, double dx2, double mass, int index);
 
 int main (int argc, char *argv[])
 {
@@ -33,7 +38,7 @@ int main (int argc, char *argv[])
   int myid, num_procs;
   
   int ni, nj, nk, pi, pj, pk, npi, npj, npk;
-  double dx, dy, dz;
+  double dx0, dx1, dx2;
   int ilower[3], iupper[3];
   
   int solver_id;
@@ -42,13 +47,13 @@ int main (int argc, char *argv[])
   clock_t start_t = clock();
   clock_t check_t;
   
-  HYPRE_StructGrid     grid;
-  HYPRE_StructStencil  stencil;
-  HYPRE_StructMatrix   A;
-  HYPRE_StructVector   b;
-  HYPRE_StructVector   x;
-  HYPRE_StructSolver   solver;
-  HYPRE_StructSolver   precond;
+  HYPRE_StructGrid    grid;
+  HYPRE_StructStencil stencil;
+  HYPRE_StructMatrix  A;
+  HYPRE_StructVector  b;
+  HYPRE_StructVector  x;
+  HYPRE_StructSolver  solver;
+  HYPRE_StructSolver  precond;
   
   int num_iterations;
   double final_res_norm;
@@ -200,9 +205,9 @@ int main (int argc, char *argv[])
   /* Figure out the processor grid (npi x npj x npk).  The local problem
      size for the interior nodes is indicated by (ni x nj x nk).
      pi and pj and pk indicate position in the processor grid. */
-  dx = (log(rmax) - log(rmin)) / (npi * ni); 
-  dy = 2. * M_PI / (npj * nj);
-  dz = period / (npk * nk);
+  dx0 = period / (npk * nk);
+  dx1 = (log(rmax) - log(rmin)) / (npj * nj); 
+  dx2 = 2. * M_PI / (npi * ni);
   
   pk = myid / (npi * npj);
   pj = (myid - pk * npi * npj) / npi;
@@ -223,7 +228,7 @@ int main (int argc, char *argv[])
     HYPRE_StructGridSetExtents(grid, ilower, iupper);
     
     /* Set periodic boundary conditions on t and phi*/
-    int boundcon[3] = {0, npj * nj, npk * nk};
+    int boundcon[3] = {npi * ni, 0, npk * nk};
     HYPRE_StructGridSetPeriodic(grid, boundcon);
     
     HYPRE_StructGridAssemble(grid);
@@ -240,6 +245,7 @@ int main (int argc, char *argv[])
     HYPRE_StructStencilCreate(3, NSTENCIL, &stencil);
     
     /* Define the geometry of the stencil */
+    /* Recall i = x2, j = x1, k = x0 */
     /*
       22 14 21    10 04 09    26 18 25    ^
       11 05 12    01 00 02    15 06 16    |
@@ -301,12 +307,12 @@ int main (int argc, char *argv[])
       gridi = temp - ni * nj * gridk + (pi - gridj) * ni;
       gridj += pj * nj;
       gridk += pk * nk;
+
+      x0 = dx0 * gridk;			
+      x1 = log(rmin) + dx1 * gridj;
+      x2 = dx2 * gridi;
 			
-      x0 = log(rmin) + dx * gridi;
-      x1 = dy * gridj;
-      x2 = dz * gridk;
-			
-      coeff_values(coeff, x0, x1, x2, dx, dy, dz, mass, 6);
+      coeff_values(coeff, x0, x1, x2, dx0, dx1, dx2, mass, 6);
 		  			
       /*0=a, 1=b, 2=c, 3=d, 4=e, 5=f*/
       /*
@@ -326,14 +332,14 @@ int main (int argc, char *argv[])
       values[i+8]  = -coeff[1];
       values[i+9]  = coeff[1];
       values[i+10] = -coeff[1];
-      values[i+11] = 0.;
-      values[i+12] = 0.;
-      values[i+13] = coeff[3];
-      values[i+14] = -coeff[3];
-      values[i+15] = 0.;
-      values[i+16] = 0.;
-      values[i+17] = -coeff[3];
-      values[i+18] = coeff[3];
+      values[i+11] = coeff[3];
+      values[i+12] = -coeff[3];
+      values[i+13] = 0.;
+      values[i+14] = 0.;
+      values[i+15] = -coeff[3];
+      values[i+16] = coeff[3];
+      values[i+17] = 0.;
+      values[i+18] = 0.;
 			
       /* values[i+19] = 0.; */
       /* values[i+20] = 0.; */
@@ -362,24 +368,24 @@ int main (int argc, char *argv[])
     int bc_ilower[3];
     int bc_iupper[3];
     int	nentries = 6;
-    int nvalues  = nentries * nj * nk; /* number of stencil entries times the 
+    int nvalues  = nentries * ni * nk; /* number of stencil entries times the 
 					  length of one side of my grid box */
     double *values;
     int stencil_indices[nentries];
     values = (double*) calloc(nvalues, sizeof(double));
 		
-    /* Recall: pi and pj describe position in the processor grid */
-    if (pi == 0) {
+    /* Recall: pi and pj describe position in the processor grid */    
+    if (pj == 0) {
       /* Bottom row of grid points */
       double coeff[6];
 
-      coeff_values(coeff, log(rmin), 0., 0., dx, dy, dz, mass, 6);
+      coeff_values(coeff, 0., log(rmin), 0., dx0, dx1, dx2, mass, 6);
 			
       for (j = 0; j < nvalues; j += nentries) {
-	values[j]   = coeff[5] + coeff[0];
-	values[j+1] = 0.0;
-	values[j+2] = coeff[2] + coeff[1];
-	values[j+3] = coeff[2] - coeff[1];
+	values[j]   = coeff[5] + coeff[2];
+	values[j+1] = coeff[0] + coeff[1];
+	values[j+2] = coeff[0] - coeff[1];
+	values[j+3] = 0.0;
 	values[j+4] = 0.0;
 	values[j+5] = 0.0;
       }
@@ -388,50 +394,58 @@ int main (int argc, char *argv[])
       bc_ilower[1] = pj * nj;
       bc_ilower[2] = pk * nk;
 			
-      bc_iupper[0] = bc_ilower[0];
-      bc_iupper[1] = bc_ilower[1] + nj - 1;
+      bc_iupper[0] = bc_ilower[0] + ni - 1;
+      bc_iupper[1] = bc_ilower[1];
       bc_iupper[2] = bc_ilower[2] + nk - 1;
 			
       stencil_indices[0] = 0;
       stencil_indices[1] = 1;
-      stencil_indices[2] = 3;
-      stencil_indices[3] = 4;
+      stencil_indices[2] = 2;
+      stencil_indices[3] = 3;
       stencil_indices[4] = 7;
-      stencil_indices[5] = 10;
+      stencil_indices[5] = 8;
 			
       HYPRE_StructMatrixSetBoxValues(A, bc_ilower, bc_iupper, nentries,
 				     stencil_indices, values);
     }
+
+          /*0=a, 1=b, 2=c, 3=d, 4=e, 5=f*/
+      /*
+	xx 14 xx    10 04 09    xx 18 xx    ^
+	11 05 12    01 00 02    15 06 16    |			 
+	xx 13 xx    07 03 08    xx 17 xx    j i ->    k - - >			
+      */
+
 		
-    if (pi == npi - 1) {
+    if (pj == npj - 1) {
       /* upper row of grid points */
       double coeff[6];
 			
-      bc_ilower[0] = pi * ni + ni - 1;
-      bc_ilower[1] = pj * nj;
+      bc_ilower[0] = pi * ni;
+      bc_ilower[1] = pj * nj + nj - 1;
       bc_ilower[2] = pk * nk;
 			
-      bc_iupper[0] = bc_ilower[0];
-      bc_iupper[1] = bc_ilower[1] + nj - 1;
+      bc_iupper[0] = bc_ilower[0] + ni - 1;
+      bc_iupper[1] = bc_ilower[1];
       bc_iupper[2] = bc_ilower[2] + nk - 1;
 
-      coeff_values(coeff, log(rmax) - dx, 0., 0., dx, dy, dz, mass, 6);
+      coeff_values(coeff, 0., log(rmax) - dx1, 0., dx0, dx1, dx2, mass, 6);
 		  
       for (j = 0; j < nvalues; j += nentries) {
-	values[j]   = coeff[5] + coeff[0];
-	values[j+1] = 0.0;
-	values[j+2] = coeff[2] - coeff[1];
-	values[j+3] = coeff[2] + coeff[1];
+	values[j]   = coeff[5] + coeff[2];
+	values[j+1] = coeff[0] - coeff[1];
+	values[j+2] = coeff[0] + coeff[1];
+	values[j+3] = 0.0;
 	values[j+4] = 0.0;
 	values[j+5] = 0.0;
       }
 			
       stencil_indices[0] = 0;
-      stencil_indices[1] = 2;
-      stencil_indices[2] = 3;
+      stencil_indices[1] = 1;
+      stencil_indices[2] = 2;
       stencil_indices[3] = 4;
-      stencil_indices[4] = 8;
-      stencil_indices[5] = 9;
+      stencil_indices[4] = 9;
+      stencil_indices[5] = 10;
 			
       HYPRE_StructMatrixSetBoxValues(A, bc_ilower, bc_iupper, nentries,
 				     stencil_indices, values);
@@ -463,6 +477,7 @@ int main (int argc, char *argv[])
     /* Set the values */
     for (i = 0; i < nvalues; i++) {
       values[i] = gsl_ran_gaussian(rstate, 1.);
+      // TODO possibly give options chosen at compile or run time
     }
     HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
 		
@@ -602,10 +617,10 @@ int main (int argc, char *argv[])
       for (k = 0; k < nk; k++) {
 	for (j = 0; j < nj; j++) {
 	  for (i = 0; i < ni; i++) {
-	    radius = rmin * exp( (i + pi * ni) * dx )
+	    radius = rmin * exp( (j + pj * nj) * dx1 )
 	      + factor * rmin - rmin;
 	    env[l] = 3. * mdot
-	      * ( 1. - sqrt( rmin * exp(-1. * dx) * factor / radius) )
+	      * ( 1. - sqrt( rmin * exp(-1. * dx1) * factor / radius) )
 	      / ( 8. * M_PI * pow(radius , 3.) )
 	      * exp( 0.5 * (raw[l] - avg_raw) / sqrt(var_raw) );
 	      //* (1. + 0.5 * (raw[l] - avg_raw) / sqrt(var_raw) );
@@ -635,8 +650,8 @@ int main (int argc, char *argv[])
       for (k = pk * nk; k < (pk + 1) * nk; k++) {
 	for (j = 0; j < nj; j++) {
 	  for (i = 0; i < ni; i++) {
-	    area = 0.5 * exp( 2. * (i + pi * ni) * dx ) *
-	      ( exp( 2. * dx ) - 1. ) * dy;
+	    area = 0.5 * exp( 2. * (j + pj * nj) * dx1 ) *
+	      ( exp( 2. * dx1 ) - 1. ) * dx2;
 	    lc_raw[k] += raw[l] * area;
 	    lc_env[k] += env[l] * area;
 	    if (env[l] < min_env)
@@ -746,9 +761,9 @@ int main (int argc, char *argv[])
     hdf5_write_single_val(&mdot, "mdot", H5T_IEEE_F64LE);
     hdf5_write_single_val(&rmin, "rmin", H5T_IEEE_F64LE);
     hdf5_write_single_val(&rmax, "rmax", H5T_IEEE_F64LE);
-    hdf5_write_single_val(&dx, "dr", H5T_IEEE_F64LE);
-    hdf5_write_single_val(&dy, "dphi", H5T_IEEE_F64LE);
-    hdf5_write_single_val(&dz, "dt", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dx0, "dt", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dx1, "dr", H5T_IEEE_F64LE);
+    hdf5_write_single_val(&dx2, "dphi", H5T_IEEE_F64LE);
 
     hdf5_write_single_val(&npi, "npi", H5T_STD_I32LE);
     hdf5_write_single_val(&npj, "npj", H5T_STD_I32LE);
@@ -801,26 +816,26 @@ int main (int argc, char *argv[])
 
 double ksq(double x0, double x1, double x2)
 {
-  return 1.;// + log(1. + x0 * log(10.) / (2. * M_PI) );
+  return 1.;// + log(1. + x1 * log(10.) / (2. * M_PI) );
 }
 
 double gam(double x0, double x1, double x2)
 {
-  return 1.;// * (1. + x0 * log(10.) / (2. * M_PI));
+  return 1.;// * (1. + x1 * log(10.) / (2. * M_PI));
 }
 
 double bet1(double x0, double x1, double x2)
 {
-  return 36.;// * (1. - 0.75 * erf(0.5 * x0 * log(10.) / (2 * M_PI) ));
+  return 36.;// * (1. - 0.75 * erf(0.5 * x1 * log(10.) / (2 * M_PI) ));
 }
 
 double bet2(double x0, double x1, double x2)
 {
-  return 16000. * exp(x0);
+  return 16000. * exp(x1);
 }
 
-void coeff_values(double* coeff, double x0, double x1, double x2, double dx,
-		  double dy, double dz, double mass, int index)
+void coeff_values(double* coeff, double x0, double x1, double x2, double dx0,
+		  double dx1, double dx2, double mass, int index)
 {
   double theta, psi, gamma, beta1, beta2;
   theta = -7. * M_PI / 18.;
@@ -828,15 +843,21 @@ void coeff_values(double* coeff, double x0, double x1, double x2, double dx,
          = arctan(c^3/(GMe^(3x/2))) since r=GMe^x/c^2)
      c^3/(GM) is canceled out by unit conversion
   */
-  psi   = atan( exp( -1.5 * x0 ) );
+  psi   = atan( exp( -1.5 * x1 ) );
   gamma = gam(x0, x1, x2);
   beta1 = bet1(x0, x1, x2);
   beta2 = bet2(x0, x1, x2);
-  coeff[0] = ( gamma + beta1 * cos(theta) * cos(theta) ) / (dx * dx);
-  coeff[1] = 0.5 * beta1 * cos(theta) * sin(theta) / (dx * dy);
-  coeff[2] = ( gamma + beta1 * sin(theta) * sin(theta)
-	       + beta2 * sin(psi) * sin(psi) ) / (dy * dy);
-  coeff[3] = 0.5 * beta2 * cos(psi) * sin(psi) / (dy * dz);
-  coeff[4] = ( gamma + beta2 * cos(psi) * cos(psi) ) / (dz * dz);
+  /* dphi^2 */
+  coeff[0] = ( gamma + beta1 * sin(theta) * sin(theta)
+	       + beta2 * sin(psi) * sin(psi) ) / (dx2 * dx2);
+  /* dphidx */
+  coeff[1] = 0.5 * beta1 * cos(theta) * sin(theta) / (dx1 * dx2);
+  /* dx^2 */
+  coeff[2] = ( gamma + beta1 * cos(theta) * cos(theta) ) / (dx1 * dx1);
+  /* dphidt */
+  coeff[3] = 0.5 * beta2 * cos(psi) * sin(psi) / (dx2 * dx0);
+  /* dt^2 */
+  coeff[4] = ( gamma + beta2 * cos(psi) * cos(psi) ) / (dx0 * dx0);
+  /* const */
   coeff[5] = -2. * ( coeff[0] + coeff[2] + coeff[4] ) - ksq(x0, x1, x2);
 }
