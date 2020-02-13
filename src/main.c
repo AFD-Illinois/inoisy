@@ -1,10 +1,11 @@
 /*
-  Compile with:   make grf
+  Compile with:   make all
+                  or make (insert model name) e.g. make disk
   
-  Sample run:     mpirun -np 4 grf -n 32 -solver 0 -v 1 1
-  mpiexec -n 4 ./grf -n 32 -solver 0 -v 1 1
+  Sample run:     mpirun -np 4 disk -n 32 -solver 0 -v 1 1
+                  mpiexec -n 4 ./poisson -n 32 -solver 0 -v 1 1
   
-  To see options: grf -help
+  To see options: use option help, -help, or --help
 
   Index naming conventions:
   x0 = t, x1 = r, x2 = phi
@@ -53,6 +54,8 @@ int main (int argc, char *argv[])
   double final_res_norm;
   
   int output, timer;
+
+  char* dir_ptr;
   
   /* Initialize MPI */
   MPI_Init(&argc, &argv);
@@ -69,7 +72,9 @@ int main (int argc, char *argv[])
   n_post = 1;
   output = 1; /* output data by default */
   timer  = 0;
-
+  char* default_dir = "."; /* output in current directory by default */
+  dir_ptr = default_dir;
+    
   /* Initiialize rng */
   const gsl_rng_type *T;
   gsl_rng *rstate;
@@ -112,10 +117,13 @@ int main (int argc, char *argv[])
       }
       else if ( strcmp(argv[arg_index], "-pgrid") == 0 ) {
 	arg_index++;
+	/* Make sure there are 3 arguments after -pgrid */
 	if (arg_index >= argc - 2) {
 	  check_pgrid = 1;
 	  break;
 	}
+	/* Check that pgrid agrees with assigned number of processors
+	   (Also checks for non-integer inputs) */
 	npi = atoi(argv[arg_index++]);
 	npj = atoi(argv[arg_index++]);
 	npk = atoi(argv[arg_index++]);
@@ -132,11 +140,16 @@ int main (int argc, char *argv[])
 	arg_index++;
 	n_pre = atoi(argv[arg_index++]);
 	n_post = atoi(argv[arg_index++]);
-      }
+      } // TODO check that there are two integers following -v
       else if ( strcmp(argv[arg_index], "-dryrun") == 0 ) {
 	arg_index++;
 	output = 0;
       }
+      else if ( strcmp(argv[arg_index], "-o") == 0 ||
+		strcmp(argv[arg_index], "-output") == 0 ) {
+	arg_index++;
+	dir_ptr = argv[arg_index];
+      } // TODO check that directory exists before solving rather than later
       else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
 	arg_index++;
 	timer = 1;
@@ -168,10 +181,11 @@ int main (int argc, char *argv[])
 	printf("                          1  - SMG\n");
 	printf("  -v <n_pre> <n_post>   : Number of pre and post relaxations (default: 1 1).\n");
 	printf("  -dryrun               : Run solver w/o data output.\n");
+	printf("  -output <dir> (or -o) : Output data in <dir> (default: ./)\n");
 	printf("  -timer                : Time each step on processor zero.\n");
 	printf("\n");
-	printf("Sample run:     mpirun -np 4 grf -n 32 -nk 64 -pgrid 2 2 1 -solver 0\n");
-	printf("                mpiexec -n 4 ./grf -n 32 -nk 64 -pgrid 2 2 1 -solver 0\n");
+	printf("Sample run:     mpirun -np 8 poisson -n 32 -nk 64 -pgrid 1 2 4 -solver 1\n");
+	printf("                mpiexec -n 4 ./disk -n 128 -nj 32 -pgrid 2 2 1 -solver 0\n");
 	printf("\n");
       }
       MPI_Finalize();
@@ -488,7 +502,7 @@ int main (int argc, char *argv[])
       strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
 
       // TODO read in output folder instead of assuming it exists
-      sprintf(filename, "%s/%s_%d_%d_%d_%s.h5", "output", model_name, 
+      sprintf(filename, "%s/%s_%d_%d_%d_%s.h5", dir_ptr, model_name, 
 	      npi * ni, npj * nj, npk * nk, buffer);
 
       printf("%s\n\n", filename);
