@@ -8,8 +8,6 @@
 
 #define NSTENCIL 7
 
-const char model_name[] = "poisson";
-
 int model_set_gsl_seed(int seed, int myid)
 {
   return seed + myid;

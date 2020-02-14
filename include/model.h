@@ -3,8 +3,6 @@
 
 #include "HYPRE_struct_ls.h"
 
-extern const char model_name[];
-
 int model_set_gsl_seed(int seed, int myid);
 
 void model_set_spacing(double* dx0, double* dx1, double* dx2,

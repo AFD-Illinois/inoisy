@@ -20,7 +20,7 @@ LFLAGS   = $(LINKOPTS) $(LIBS)
 
 # List of all programs to be compiled
 
-EXE = disk poisson
+EXE = disk poisson noisy_unif noisy_disk
 
 SRC := $(addprefix $(SRC_DIR)/,main.c hdf5_utils.c model_%.c param_%.c)
 OBJ := $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)

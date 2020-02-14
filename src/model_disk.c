@@ -9,8 +9,6 @@
 #define NSTENCIL 19
 // TODO generalize dimensions in main, set dimension in model
 
-const char model_name[] = "disk";
-
 int model_set_gsl_seed(int seed, int myid)
 {
   return seed + myid;

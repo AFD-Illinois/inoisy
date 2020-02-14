@@ -4,6 +4,8 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
+const char model_name[] = "disk";
+
 const double param_mass    = 1.E6;       /* in solar masses*/
 const double param_mdot    = 1.E-7;      /* in solar masses per year */
 const double param_x0start = 0.;         /* t in terms of M */

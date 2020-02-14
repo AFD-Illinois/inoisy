@@ -3,6 +3,8 @@
 
 #include <gsl/gsl_rng.h>
 
+extern const char model_name[];
+
 extern const double param_mass;
 extern const double param_mdot;
 extern const double param_x0start;

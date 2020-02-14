@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+const char model_name[] = "poisson";
+
 const double param_mass    = 1.;
 const double param_mdot    = 1.;
 const double param_x0start = 0.;
