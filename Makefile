@@ -1,74 +1,46 @@
-########################################################################
 # Compiler and external dependences
-########################################################################
-CC        = mpicc
-HYPRE_DIR = /usr/local/hypre
+CC        = h5pcc
+HYPRE_DIR = /home/dl6/hypre-2.11.2/src/hypre
 
-########################################################################
+# Local directories
+INC_DIR = $(CURDIR)/include
+SRC_DIR = $(CURDIR)/src
+OBJ_DIR = $(CURDIR)/obj
+
 # Compiling and linking options
-########################################################################
 COPTS     = -g -Wall
-CINCLUDES = -I$(HYPRE_DIR)/include
+CINCLUDES = -I$(HYPRE_DIR)/include -I/home/dl6/HYPRE-GRF -I$(INC_DIR)
 CDEFS     = -DHAVE_CONFIG_H -DHYPRE_TIMING
 CFLAGS    = $(COPTS) $(CINCLUDES) $(CDEFS)
-# FOPTS     = -g
-# FINCLUDES = $(CINCLUDES)
-# FFLAGS    = $(FOPTS) $(FINCLUDES)
-# CXXOPTS   = $(COPTS) -Wno-deprecated
-# CXXINCLUDES = $(CINCLUDES) -I..
-# CXXDEFS   = $(CDEFS)
-# IFLAGS_BXX = 
-# CXXFLAGS  = $(CXXOPTS) $(CXXINCLUDES) $(CXXDEFS) $(IFLAGS_BXX)
-# IF90FLAGS = 
-# F90FLAGS = $(FFLAGS) $(IF90FLAGS)
 
+LINKOPTS = $(COPTS)
+LDFLAGS  = -L$(HYPRE_DIR)/lib
+LIBS     = -lHYPRE -lm -lgsl -lgslcblas -shlib -lstdc++
+LFLAGS   = $(LINKOPTS) $(LIBS)
 
-LINKOPTS  = $(COPTS)
-LIBS      = -L$(HYPRE_DIR)/lib -lHYPRE -lm -lgsl -lgslcblas
-LFLAGS    = $(LINKOPTS) $(LIBS) -lstdc++
-# LFLAGS_B =\
-#  -L${HYPRE_DIR}/lib\
-#  -lbHYPREClient-C\
-#  -lbHYPREClient-CX\
-#  -lbHYPREClient-F\
-#  -lbHYPRE\
-#  -lsidl -ldl -lxml2
-
-########################################################################
-# Rules for compiling the source files
-########################################################################
-.SUFFIXES: .c
-
-.c.o:
-	$(CC) $(CFLAGS) -c $<
-
-########################################################################
 # List of all programs to be compiled
-########################################################################
-ALLPROGS = grf poisson
 
-all: $(ALLPROGS)
+EXE = disk poisson noisy_unif noisy_disk
+
+SRC := $(addprefix $(SRC_DIR)/,main.c hdf5_utils.c model_%.c param_%.c)
+OBJ := $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+
+all: $(EXE)
+
+$(EXE): %: $(OBJ)
+	$(CC) $(LDFLAGS) $^ $(LFLAGS) -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR):
+	mkdir $@
 
 default: all
 
-########################################################################
-# Compile grf
-########################################################################
-grf: grf.o
-	$(CC) -o $@ $^ $(LFLAGS)
-
-########################################################################
-# Compile poisson
-########################################################################
-poisson: poisson.o
-	$(CC) -o $@ $^ $(LFLAGS)
-
-########################################################################
 # Clean up
-########################################################################
+
 clean:
-	rm -f $(ALLPROGS:=.o)
-	cd vis; make clean
+	$(RM) -r $(OBJ_DIR)
 distclean: clean
-	rm -f $(ALLPROGS) $(ALLPROGS:=*~)
-	rm -fr README*
+	$(RM) $(EXE)
