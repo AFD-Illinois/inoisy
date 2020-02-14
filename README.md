@@ -5,11 +5,13 @@ Generates Gaussian random fields (GRFs) following Lindgren et al. 2011.
 
 Requires HYPRE, HDF5, and MPI.
 
-Compile with:   make all
-                or make <model name> e.g. make disk
+Compile with:   
+make all
+or make <model name> e.g. make disk
   
-Sample run:     mpirun -np 8 disk -n 64 -solver 1 -pgrid 4 2 1 -output data
-                mpiexec -n 4 ./poisson -n 32 -solver 0 -timer -dryrun
+Sample run:     
+mpirun -np 8 disk -n 64 -solver 1 -pgrid 4 2 1 -output data
+mpiexec -n 4 ./poisson -n 32 -solver 0 -timer -dryrun
 
 To see options: use option help, -help, or --help
 
