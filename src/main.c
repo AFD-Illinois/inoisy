@@ -63,16 +63,16 @@ int main (int argc, char *argv[])
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   
   /* Set defaults */
-  ni  = 32; /* nj and nk are set equal to ni later */
+  ni  = 32;                    /* nj and nk are set equal to ni later */
   npi = 1;
   npj = 1;
-  npk = num_procs; /* default processor grid is 1 x 1 x N */
+  npk = num_procs;             /* default processor grid is 1 x 1 x N */
   solver_id = 0;
   n_pre  = 1;
   n_post = 1;
-  output = 1; /* output data by default */
+  output = 1;                  /* output data by default */
   timer  = 0;
-  char* default_dir = "."; /* output in current directory by default */
+  char* default_dir = ".";     /* output in current directory by default */
   dir_ptr = default_dir;
     
   /* Initiialize rng */
@@ -150,6 +150,7 @@ int main (int argc, char *argv[])
 	arg_index++;
 	dir_ptr = argv[arg_index];
       } // TODO check that directory exists before solving rather than later
+        // TODO remove trailing '/' if it exists
       else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
 	arg_index++;
 	timer = 1;
@@ -501,7 +502,6 @@ int main (int argc, char *argv[])
       timeinfo = localtime(&rawtime);
       strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
 
-      // TODO read in output folder instead of assuming it exists
       sprintf(filename, "%s/%s_%d_%d_%d_%s.h5", dir_ptr, model_name, 
 	      npi * ni, npj * nj, npk * nk, buffer);
 
