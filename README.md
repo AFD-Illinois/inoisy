@@ -41,3 +41,5 @@ solution should match sin(x0)sin(x1)sin(x2) on a periodic domain {0,2Pi} x
 Index naming conventions:
 Given a stencil {i,j,k}, HYPRE has k as the slowest varying index. 
 Thus, the indices correspond to x0 = k, x1 = j, x2 = i. 
+
+13 Feb 2020
