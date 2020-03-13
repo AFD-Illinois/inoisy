@@ -36,7 +36,7 @@ void model_set_periodic(int* bound, int ni, int nj, int nk,
   11 05 12    01 00 02    15 06 16    |
   19 13 20    07 03 08    23 17 24    j i ->    k - - >
   
-  Delete zero entries:
+f  Delete zero entries:
   xx 14 xx    10 04 09    xx 18 xx    ^
   11 05 12    01 00 02    15 06 16    |			 
   xx 13 xx    07 03 08    xx 17 xx    j i ->    k - - >			

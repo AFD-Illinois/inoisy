@@ -9,7 +9,7 @@ OBJ_DIR = $(CURDIR)/obj
 
 # Compiling and linking options
 COPTS     = -g -Wall
-CINCLUDES = -I$(HYPRE_DIR)/include -I/home/dl6/HYPRE-GRF -I$(INC_DIR)
+CINCLUDES = -I$(HYPRE_DIR)/include -I$(INC_DIR)
 CDEFS     = -DHAVE_CONFIG_H -DHYPRE_TIMING
 CFLAGS    = $(COPTS) $(CINCLUDES) $(CDEFS)
 
@@ -20,7 +20,7 @@ LFLAGS   = $(LINKOPTS) $(LIBS)
 
 # List of all programs to be compiled
 
-EXE = disk poisson noisy_unif noisy_disk
+EXE = poisson disk_logr disk_xy noisy_unif noisy_disk general_xy
 
 SRC := $(addprefix $(SRC_DIR)/,main.c hdf5_utils.c model_%.c param_%.c)
 OBJ := $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)

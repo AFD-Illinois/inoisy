@@ -32,7 +32,8 @@ To add a model, create a 'param_<model_name>.c' and 'model_<model_name>.c'
 following the structure of the other models, and add the <model_name> to the
 list of models in the Makefile.
 
-Current models: poisson, disk, noisy_uniform, noisy_disk
+Current models: poisson, general_xy, disk_xy, disk_logr,
+                noisy_uniform, noisy_disk
 
 The default parameters for poisson are useful for testing the program. The 
 solution should match sin(x0)sin(x1)sin(x2) on a periodic domain {0,2Pi} x
