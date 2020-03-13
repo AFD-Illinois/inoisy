@@ -4,7 +4,7 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
-const char model_name[] = "disk";
+const char model_name[] = "disk_logr";
 
 const double param_mass    = 1.E6;       /* in solar masses*/
 const double param_mdot    = 1.E-7;      /* in solar masses per year */
@@ -30,15 +30,13 @@ double param_env(double raw, double avg_raw, double var_raw,
 {
   double radius;
   radius = exp( param_x1start + (j + pj * nj) * dx1 );
-  return 3. * param_mdot
+  return 3. * param_mdot * 5.67E46 // solar mass per year to erg/s
     * ( 1. - sqrt( exp(param_x1start) / radius) )
     / ( 8. * M_PI * pow(radius , 3.) )
     * exp( 0.5 * (raw - avg_raw) / sqrt(var_raw) );
 
   /* envelope is 3/(8PI)*mdot*GM/r^3*(1-sqrt(r0/r))
-     in units of Msolar*c^2 per r^2 per year, where r = GM/c^2 
-     and c = 1 */
-  //TODO fix units
+     in units of erg/s per unit area (in M^2) */
 }
 
 static double w_keplerian(double x0, double x1, double x2)
