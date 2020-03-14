@@ -1,6 +1,9 @@
-# Compiler and external dependences
+# Compiler and hypre location
 CC        = h5pcc
-HYPRE_DIR = /home/dl6/hypre-2.11.2/src/hypre
+ifndef HYPRE_DIR
+$(info HYPRE_DIR not defined, trying '/usr/local/hypre')
+HYPRE_DIR = /usr/local/hypre
+endif
 
 # Local directories
 INC_DIR = $(CURDIR)/include
