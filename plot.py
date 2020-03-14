@@ -3,52 +3,107 @@ import matplotlib.pyplot as plt
 import sys
 import h5py
 import os
+import argparse
 
-if len(sys.argv) != 4:
-  print('ERROR Format is python plot.py [file] [nstart] [nend]')
-  sys.exit()
+parser = argparse.ArgumentParser(description='Plots file.')
+parser.add_argument('filename', metavar='FILE', type=str, 
+                    help='HDF5 data file.')
+parser.add_argument('nstart', metavar='NSTART', type=int, 
+                    help='Starting timeslice.')
+parser.add_argument('nend', metavar='NEND', type=int,
+                    help='Plots from NSTART to NEND - 1.')
+parser.add_argument('-g', '--grid', type=str, choices=['xy', 'logr'], default='xy', 
+                    help='Coordinate system for plot (default: xy).')
+parser.add_argument('-d', '--dtype', type=str, choices=['raw', 'env'], default='env', 
+                    help='Plot raw data or data with envelope function (default: env).')
+parser.add_argument('-p', '--plot', type=str, choices=['linear', 'log'], default='linear', 
+                    help='Plot data in logscale or linear (default: linear).')
+group = parser.add_mutually_exclusive_group()
+group.add_argument('-m', '--minmax', action="store_true",
+                   help='Sets plotting range to be the minimum and maximum of data (default).')
+group.add_argument('-sd', '--stdev', nargs=2, metavar=('SDLOW', 'SDHIGH'), type=float,
+                   help='Sets plotting range to be between AVG - SDLOW * SD and AVG + SDHIGH * SD')
+args = parser.parse_args()
 
-filename = sys.argv[1]
-nstart   = int(sys.argv[2])
-nend     = int(sys.argv[3])
+#Set default plot range
+if not args.minmax and not args.stdev:
+    args.minmax = True
 
-#filename = 'vis/256_256_1024_2019_10_10_025729.h5'
-#nstart   = 1
-#nend     = 2
+#args.filename = 'vis/128_128_512_2020_02_05_184118.h5'
+#args.nstart   = 0
+#args.nend     = 1
 
-if nstart > nend:
-    print('ERROR nstart must be less than or equal to nend')
+if args.nstart > args.nend:
+    print("ERROR NSTART must be less than or equal to NEND\n")
+    sys.exit()
+if args.stdev and -args.stdev[0] > args.stdev[1]:
+    print("ERROR AVG - SDLOW * SD must be lower than AVG + SDHIGH * SD\n")
+    sys.exit()
+    
+hf   = h5py.File(args.filename, 'r')
+data = np.array(hf['data/data_'+args.dtype])
+var  = np.array(hf['stats/var_'+args.dtype])
+avg  = np.array(hf['stats/avg_'+args.dtype])
+
+if args.nend > data.shape[0]:
+    print("ERROR NEND is longer than the file")
     sys.exit()
 
-hf   = h5py.File(filename, 'r')
-data = hf['data/data']
-data = np.array(data)
-Min  = hf['params/min']
-Min  = np.array(Min)
-Max  = hf['params/max']
-Max  = np.array(Max)
+x1start = np.array(hf['params/x1start'])
+x2start = np.array(hf['params/x2start'])
+x1end = np.array(hf['params/x1end'])
+x2end = np.array(hf['params/x2end'])
 
-if nend > data.shape[0]:
-    print('ERROR nend is longer than the file')
-    sys.exit()
+Min = np.array(hf['stats/min_'+args.dtype])
+Max = np.array(hf['stats/max_'+args.dtype]) 
 
-output = os.path.splitext(filename)[0]+'/'
+if args.plot == 'linear' and args.stdev:
+    Min = avg - args.stdev[0] * np.sqrt(var)
+    Max = avg + args.stdev[1] * np.sqrt(var)
+if args.plot == 'log':
+    if Min < 0:
+        print("ERROR minimum of data is negative, can't plot log\n")
+        sys.exit()
+    nonzerodata = np.log10(data[np.nonzero(data)])
+    data = np.log10(data)
+    if args.minmax:
+        Min = np.min(nonzerodata)
+        Max = np.log(Max)
+    if args.stdev:
+        avg = np.mean(nonzerodata)
+        sd  = np.std(nonzerodata)
+        Min = avg - args.stdev[0] * sd
+        Max = avg + args.stdev[1] * sd        
+
+output = os.path.splitext(args.filename)[0]+'/'
 os.makedirs(output,exist_ok=True)
 
-ni = data.shape[2]
-nj = data.shape[1]
+ni = data.shape[1]
+nj = data.shape[2]
 
-x0  = 0.0704486
-dx1 = 0.0400164 * 96/ni
+dx1 = np.array(hf['params/dx1'])
+dy2 = np.array(hf['params/dx2'])
 
-r  = np.exp(np.linspace(x0, x0 + ni*dx1, ni))
-th = np.linspace(0, 2*np.pi, nj)
-R, Theta = np.meshgrid(r, th)
-x = R * np.cos(Theta)
-y = R * np.sin(Theta)
-for i in range(nstart,nend):
+x1 = np.linspace(x1start, x1end, ni+1)
+x2 = np.linspace(x2start, x2end, nj+1)
+
+if args.grid == 'xy':
+    x, y = np.meshgrid(x1, x2)
+if args.grid == 'logr':
+    r  = np.exp(x1)
+    th = x2
+    Theta, R = np.meshgrid(th, r)
+    x = R * np.cos(Theta)
+    y = R * np.sin(Theta)
+
+cmap = plt.get_cmap('afmhot')
+cmap.set_bad(color = 'black')
+
+for i in range(args.nstart,args.nend):
     var = data[i,:,:]
-    plt.pcolormesh(x,y,var, cmap='jet', vmin=Min, vmax=Max)
-    plt.axis('equal')
-    plt.savefig(output+str(i)+'.png')
+    plt.pcolormesh(x,y,var, cmap=cmap, vmin=Min, vmax=Max)
+    plt.axis('scaled')  
+    plt.savefig(output+str(i)+'_'+args.dtype+'.png')
     plt.clf()
+
+h5py.File.close(hf)
