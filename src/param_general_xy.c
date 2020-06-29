@@ -4,12 +4,14 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
+#include "hdf5_utils.h"
+
 #define SMALL 1.E-10
 
 const char model_name[] = "general_xy";
 
-const double param_mass    = 1.E6;       /* in solar masses*/
-const double param_mdot    = 1.E-7;      /* in solar masses per year */
+/* Grid domain */
+
 const double param_x0start = 0.;         /* t in terms of M */
 const double param_x0end   = 100.; 
 const double param_x1start = -10.;       /* x in terms of M */
@@ -17,14 +19,52 @@ const double param_x1end   = 10.;
 const double param_x2start = -10.;       /* y in terms of M */  
 const double param_x2end   = 10.;
 
+/* Set default parameters */
+
+/* Mass in solar masses*/
+static double param_mass = 1.E6;
+/* Mdot in solar masses per year */
+static double param_mdot = 1.E-7;
 /* ratio of correlation length to local radius */
-static const double param_lam = 5.;
+static double param_lam  = 5.;
 /* product of correlation time and local Keplerian frequency */
-static const double param_tau = 1.;
+static double param_tau  = 1.;
 /* ratio of coefficients of major and minor axes of spatial correlation */
-static const double param_r12 = 0.1;
+static double param_r12  = 0.1;
 /* cutoff radius */
-static const double param_rct = 0.5;
+static double param_rct  = 0.5;
+
+void param_read_params(char* filename)
+{
+  /* hdf5_utils accesses a single global file at a time */
+  
+  if (filename != NULL) {
+    hdf5_open(filename);
+
+    hdf5_set_directory("/params/");
+    hdf5_read_single_val(&param_mass, "mass", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&param_mdot, "mdot", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&param_lam, "lam", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&param_tau, "tau", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&param_r12, "r12", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&param_rct, "rct", H5T_IEEE_F64LE);
+
+    hdf5_close();
+  }
+}
+
+void param_write_params(char* filename)
+{
+  /* hdf5_utils accesses a single global file at a time */
+  hdf5_set_directory("/params/");
+    
+  hdf5_write_single_val(&param_mass, "mass", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_mdot, "mdot", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_lam, "lam", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_tau, "tau", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_r12, "r12", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_rct, "rct", H5T_IEEE_F64LE);
+}
 
 /* smooth cutoff at radius r0, where function has value f(r0) and slope
 df(r0). continuous + once differentiable at r0, and has value f(0) and 

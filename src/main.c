@@ -50,12 +50,13 @@ int main (int argc, char *argv[])
   HYPRE_StructSolver  solver;
   HYPRE_StructSolver  precond;
   
-  int num_iterations;
+  int num_recursions; // number of recursions
   double final_res_norm;
   
   int output, timer;
 
   char* dir_ptr;
+  char* input_ptr;
   
   /* Initialize MPI */
   MPI_Init(&argc, &argv);
@@ -72,9 +73,11 @@ int main (int argc, char *argv[])
   n_post = 1;
   output = 1;                  /* output data by default */
   timer  = 0;
+  num_recursions = 1;
   char* default_dir = ".";     /* output in current directory by default */
-  dir_ptr = default_dir;
-    
+  dir_ptr   = default_dir;
+  input_ptr = NULL;
+  
   /* Initiialize rng */
   const gsl_rng_type *T;
   gsl_rng *rstate;
@@ -145,6 +148,11 @@ int main (int argc, char *argv[])
 	arg_index++;
 	output = 0;
       }
+      else if ( strcmp(argv[arg_index], "-i") == 0 ||
+		strcmp(argv[arg_index], "-input") == 0 ) {
+	arg_index++;
+	input_ptr = argv[arg_index];
+      }
       else if ( strcmp(argv[arg_index], "-o") == 0 ||
 		strcmp(argv[arg_index], "-output") == 0 ) {
 	arg_index++;
@@ -154,6 +162,14 @@ int main (int argc, char *argv[])
       else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
 	arg_index++;
 	timer = 1;
+      }
+      else if ( strcmp(argv[arg_index], "-nrecur") == 0 ) {
+	arg_index++;
+	num_recursions = atoi(argv[arg_index++]);
+	if (num_recursions < 1) {
+	  print_usage = 1;
+	  break;
+	}
       }
       else if ( strcmp(argv[arg_index], "help")   == 0 ||
 		strcmp(argv[arg_index], "-help")  == 0 ||
@@ -182,11 +198,17 @@ int main (int argc, char *argv[])
 	printf("                          1  - SMG\n");
 	printf("  -v <n_pre> <n_post>   : Number of pre and post relaxations (default: 1 1).\n");
 	printf("  -dryrun               : Run solver w/o data output.\n");
+	printf("  -input <file> (or -i) : Input file containing parameters and/or source field.\n");
+	// TODO read in source field and give options to choose
 	printf("  -output <dir> (or -o) : Output data in <dir> (default: ./)\n");
 	printf("  -timer                : Time each step on processor zero.\n");
+	printf("  -nrecur               : Number of recursions to apply to source field (default: 1).\n");
 	printf("\n");
 	printf("Sample run:     mpirun -np 8 poisson -n 32 -nk 64 -pgrid 1 2 4 -solver 1\n");
 	printf("                mpiexec -n 4 ./disk -n 128 -nj 32 -pgrid 2 2 1 -solver 0\n");
+	printf("\n");
+	printf("GSL_RNG_SEED=${RANDOM} mpiexec -n 4 ./general_xy -n 64 -nk 128 -pgrid 1 1 4\n");
+	printf("-solver 0 -timer -nrecur 1 -o output/\n");
 	printf("\n");
       }
       MPI_Finalize();
@@ -206,6 +228,9 @@ int main (int argc, char *argv[])
   /* Set dx0, dx1, dx2 */
   model_set_spacing(&dx0, &dx1, &dx2, ni, nj, nk, npi, npj, npk);
 
+  /* Read parameters from input file */
+  param_read_params(input_ptr);
+  
   /* Figure out processor grid (npi x npj x npk). Processor position 
      indicated by pi, pj, pk. Size of local grid on processor is 
      (ni x nj x nk) */
@@ -301,6 +326,8 @@ int main (int argc, char *argv[])
   
   /* Set up and use a struct solver */
   if (solver_id == 0) {
+    int num_iterations;
+
     HYPRE_StructPCGCreate(MPI_COMM_WORLD, &solver);
     HYPRE_StructPCGSetMaxIter(solver, 50 );
     HYPRE_StructPCGSetTol(solver, 1.0e-06 );
@@ -308,7 +335,7 @@ int main (int argc, char *argv[])
     HYPRE_StructPCGSetRelChange(solver, 0 );
     HYPRE_StructPCGSetPrintLevel(solver, 2 ); /* print each CG iteration */
     HYPRE_StructPCGSetLogging(solver, 1);
-		
+    
     /* Use symmetric SMG as preconditioner */
     HYPRE_StructSMGCreate(MPI_COMM_WORLD, &precond);
     HYPRE_StructSMGSetMemoryUse(precond, 0);
@@ -317,22 +344,57 @@ int main (int argc, char *argv[])
     HYPRE_StructSMGSetZeroGuess(precond);
     HYPRE_StructSMGSetNumPreRelax(precond, 1);
     HYPRE_StructSMGSetNumPostRelax(precond, 1);
-		
+    
     /* Set the preconditioner and solve */
     HYPRE_StructPCGSetPrecond(solver, HYPRE_StructSMGSolve,
 			      HYPRE_StructSMGSetup, precond);
-    HYPRE_StructPCGSetup(solver, A, b, x);
-    HYPRE_StructPCGSolve(solver, A, b, x);
 
-    /* Get some info on the run */
-    HYPRE_StructPCGGetNumIterations(solver, &num_iterations);
-    HYPRE_StructPCGGetFinalRelativeResidualNorm(solver, &final_res_norm);
-		
+    for (j = 0; j < num_recursions; j++) {
+      HYPRE_StructPCGSetup(solver, A, b, x);
+      HYPRE_StructPCGSolve(solver, A, b, x);
+      
+      if (j < num_recursions - 1) {
+	int    nvalues = ni * nj * nk;
+	double *values;
+	
+	values = (double*) calloc(nvalues, sizeof(double));
+	
+	HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);  
+
+	HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
+	
+	for (i = 0; i < nvalues; i ++)
+	  values[i] = 0.0;
+	// TODO see if setting x_new to x_old is better than 0.0
+	HYPRE_StructVectorSetBoxValues(x, ilower, iupper, values);
+	
+	// TODO create option to print successive steps
+	
+	free(values);
+	
+	HYPRE_StructVectorAssemble(b);
+	HYPRE_StructVectorAssemble(x);
+      }
+      
+      /* Get some info on the run */
+      HYPRE_StructPCGGetNumIterations(solver, &num_iterations);
+      HYPRE_StructPCGGetFinalRelativeResidualNorm(solver, &final_res_norm);
+
+      if (myid == 0) {
+	printf("\n");
+	printf("Iterations = %d\n", num_iterations);
+	printf("Final Relative Residual Norm = %g\n", final_res_norm);
+	printf("\n");
+      }	
+    }
+    
     /* Clean up */
     HYPRE_StructPCGDestroy(solver);
   }
-	
+  
   if (solver_id == 1) {
+    int num_iterations;
+    
     HYPRE_StructSMGCreate(MPI_COMM_WORLD, &solver);
     HYPRE_StructSMGSetMemoryUse(solver, 0);
     HYPRE_StructSMGSetMaxIter(solver, 50);
@@ -346,29 +408,63 @@ int main (int argc, char *argv[])
     HYPRE_StructSMGSetLogging(solver, 1);
 
     /* Setup and solve */
-    HYPRE_StructSMGSetup(solver, A, b, x);
-    HYPRE_StructSMGSolve(solver, A, b, x);
-		
-    /* Get some info on the run */
-    HYPRE_StructSMGGetNumIterations(solver, &num_iterations);
-    HYPRE_StructSMGGetFinalRelativeResidualNorm(solver, &final_res_norm);
-		
+    for (j = 0; j < num_recursions; j++) {
+      HYPRE_StructSMGSetup(solver, A, b, x);
+      HYPRE_StructSMGSolve(solver, A, b, x);
+
+      if (j < num_recursions - 1) {
+	int    nvalues = ni * nj * nk;
+	double *values;
+	
+	values = (double*) calloc(nvalues, sizeof(double));
+
+	HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);  
+
+	HYPRE_StructVectorDestroy(b);
+	HYPRE_StructVectorDestroy(x);
+
+	HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &b);
+	HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &x);
+	
+	HYPRE_StructVectorInitialize(b);
+	HYPRE_StructVectorInitialize(x);
+    
+	HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
+	
+	for (i = 0; i < nvalues; i ++)
+	  values[i] = 0.0;
+	// TODO see if setting _xnew to x_old is better than 0.0
+	HYPRE_StructVectorSetBoxValues(x, ilower, iupper, values);
+
+	// TODO create option to print successive steps
+	
+	free(values);
+
+	HYPRE_StructVectorAssemble(b);
+	HYPRE_StructVectorAssemble(x);
+      }
+      
+      /* Get some info on the run */
+      HYPRE_StructSMGGetNumIterations(solver, &num_iterations);
+      HYPRE_StructSMGGetFinalRelativeResidualNorm(solver, &final_res_norm);
+      
+      if (myid == 0) {
+	printf("\n");
+	printf("Iterations = %d\n", num_iterations);
+	printf("Final Relative Residual Norm = %g\n", final_res_norm);
+	printf("\n");
+      }	
+    }
+    
     /* Clean up */
     HYPRE_StructSMGDestroy(solver);
   }
-
+  
   check_t = clock();
   if ( (myid == 0) && (timer) )
     printf("Solver finished: t = %lf\n\n",
 	   (double)(check_t - start_t) / CLOCKS_PER_SEC);	
   
-  if (myid == 0) {
-    printf("\n");
-    printf("Iterations = %d\n", num_iterations);
-    printf("Final Relative Residual Norm = %g\n", final_res_norm);
-    printf("\n");
-  }	
-
   /* Output data */
   if (output) {
     /* Get the local raw data */
@@ -507,13 +603,14 @@ int main (int argc, char *argv[])
       timeinfo = localtime(&rawtime);
       strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
 
-      sprintf(filename, "%s/%s_%d_%d_%d_%s.h5", dir_ptr, model_name, 
-	      npi * ni, npj * nj, npk * nk, buffer);
+      sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir_ptr, model_name, 
+	      npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
 
       printf("%s\n\n", filename);
     }
     
     MPI_Bcast(&filename, 255, MPI_CHAR, 0, MPI_COMM_WORLD);
+    // TODO create directory if doesn't exist
     hdf5_create(filename);
     
     /* Save solution to output file*/
@@ -559,8 +656,6 @@ int main (int argc, char *argv[])
     hdf5_make_directory("params");
     hdf5_set_directory("/params/");
 
-    hdf5_write_single_val(&param_mass, "mass", H5T_IEEE_F64LE);
-    hdf5_write_single_val(&param_mdot, "mdot", H5T_IEEE_F64LE);
     hdf5_write_single_val(&param_x0start, "x0start", H5T_IEEE_F64LE);
     hdf5_write_single_val(&param_x0end, "x0end", H5T_IEEE_F64LE);
     hdf5_write_single_val(&param_x1start, "x1start", H5T_IEEE_F64LE);
@@ -578,6 +673,9 @@ int main (int argc, char *argv[])
     hdf5_write_single_val(&nj, "nj", H5T_STD_I32LE);
     hdf5_write_single_val(&nk, "nk", H5T_STD_I32LE);
     hdf5_write_single_val(&gsl_rng_default_seed, "seed", H5T_STD_U64LE);
+
+    /* Write additional parameters contained in param_<model_name>.c */
+    param_write_params(filename);
     
     hdf5_set_directory("/");
     hdf5_make_directory("stats");
