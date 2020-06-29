@@ -18,15 +18,24 @@ const double param_x2start = -10.;       /* y in terms of M */
 const double param_x2end   = 10.;
 
 /* ratio of correlation length to local radius */
-static const double param_lam = 3.;
+static const double param_lam = 5.;
 /* product of correlation time and local Keplerian frequency */
-static const double param_tau = 3.;
-/* ratio of coefficients of temporal vs spatial correlation */
-static const double param_r02 = 0.01;
+static const double param_tau = 1.;
 /* ratio of coefficients of major and minor axes of spatial correlation */
 static const double param_r12 = 0.1;
 /* cutoff radius */
-static const double param_rct = 1.;
+static const double param_rct = 0.5;
+
+/* smooth cutoff at radius r0, where function has value f(r0) and slope
+df(r0). continuous + once differentiable at r0, and has value f(0) and 
+slope 0 at r = 0 */
+static double cutoff(double r, double r0, double fr0, double dfr0, double f0)
+{
+  double a, b;
+  b = (2. * (fr0 - f0) - r0 * dfr0) / pow( r0, 3. );
+  a = (fr0 - f0) / (b * r0 * r0) + r0;
+  return b * r * r * (a - r) + f0;
+}
 
 double param_env(double raw, double avg_raw, double var_raw,
 		 int i, int j, int k, int ni, int nj, int nk,
@@ -38,38 +47,50 @@ double param_env(double raw, double avg_raw, double var_raw,
   y = param_x2start + (i + pi * ni) * dx2;
   
   radius = sqrt(x * x + y * y);
-  if (radius >= param_rct)
-    return 3. * param_mdot * 5.67E46 // solar mass*c^2/year to erg/s
-      * ( 1. - sqrt( param_rct / radius ) )
-      / (8. * M_PI * pow(radius, 3.) )
-      * exp( 0.5 * (raw - avg_raw) / sqrt(var_raw) );
+
+  /* double sigma = 5.; */
+  /* return exp(-0.5 * radius * radius / (sigma * sigma))  */
+  /*   * (raw - avg_raw) / sqrt(var_raw) */
+  /*   / ( 2. * M_PI * sigma * sigma); */
+
+  /* if (radius >= param_rct) */
+  /*   return 3. * param_mdot * 5.67E46 // solar mass*c^2/year to erg/s */
+  /*     * ( 1. - sqrt( param_rct / radius ) ) */
+  /*     / (8. * M_PI * pow(radius, 3.) ) */
+  /*     * exp( 0.5 * (raw - avg_raw) / sqrt(var_raw) ); */
+  /* else */
+  /*   return 0.; */
+  /* /\* in erg/s per unit area (in M^2) *\/ */
+
+  /* env(r) = (r0 / r)^4 * e^(-r0^2 / r^2)
+     env falls off as r^-4 at large r, peak at r = r0 / sqrt(2) with a
+     value of 4/e^2 */
+  double r0 = 2.;
+  /* at r0 / sqrt( log(1/SMALL) )
+     env(r) = log(SMALL)^2*SMALL ~ 100 * SMALL */
+  if ( radius > r0 / sqrt( log(1. / SMALL) ) ) {
+    double ir = r0 / radius;
+    return pow(ir, 4.) * exp(-ir * ir)
+  	* exp ( 0.5 * (raw - avg_raw) / sqrt(var_raw) );
+  }
   else
     return 0.;
-  /* in erg/s per unit area (in M^2) */
-}
-
-static double cutoff(double r, double r0, double fr0, double dfr0, double f0)
-{
-  double a, b;
-  b = (2. * (fr0 - f0) - r0 * dfr0) / pow( r0, 3. );
-  a = (fr0 - f0) / (b * r0 * r0) + r0;
-  return b * r * r * (a - r) + f0;
 }
 
 static double w_keplerian(double x0, double x1, double x2)
 {
   double r = sqrt(x1 * x1 + x2 * x2);
-
+  
   if (r >= param_rct)
     return pow(r, -1.5);
   else
     return cutoff(r, param_rct, pow(param_rct, -1.5),
-		  -1.5 * pow(param_rct, -2.5), 0.8 * pow(param_rct, -1.5));
+		  -1.5 * pow(param_rct, -2.5), 0.9 * pow(param_rct, -1.5));
 }
 
 static double corr_length(double x0, double x1, double x2)
 {
-    /* return param_lam; */
+  /* return param_lam; */
   
   double r = sqrt(x1 * x1 + x2 * x2);
   
@@ -77,7 +98,7 @@ static double corr_length(double x0, double x1, double x2)
     return param_lam * r;
   else
     return cutoff(r, param_rct, param_lam * param_rct,
-		  param_lam, 0.8 * param_lam * param_rct);
+		  param_lam, 0.9 * param_lam * param_rct);
 }
 
 static double corr_time(double x0, double x1, double x2)
@@ -92,83 +113,86 @@ static double corr_time(double x0, double x1, double x2)
     return cutoff(r, param_rct,
 		  2. * M_PI * param_tau * pow(param_rct, 1.5),
 		  2. * M_PI * param_tau * 1.5 * sqrt(param_rct),
-		  0.8 * 2. * M_PI * param_tau * pow(param_rct, 1.5) );
+		  0.9 * 2. * M_PI * param_tau * pow(param_rct, 1.5) );
 }
 
-static void set_velocity(double* v, double x0, double x1, double x2)
-{
-  double omega = w_keplerian(x0, x1, x2);
-  v[0] = 0.;
-  v[1] = -x2 * omega;
-  v[2] = x1 * omega;
-
-  /* v[1] = sin( x2 * 2. * M_PI / (param_x2end - param_x2start) ); */
-  /* v[2] = 0.; */
-}
-
-/* unit vector in direction of spacetime correlation */
+/* time correlation vector (1, v1, v2) */
 static void set_u0(double* u0, double x0, double x1, double x2)
 {
-  double psi, theta;
+  double omega = -w_keplerian(x0, x1, x2);
+  u0[0] = 1.;
+  u0[1] = -x2 * omega;
+  u0[2] = x1 * omega;
 
-  double v[3];
-  set_velocity(v, x0, x1, x2);
-
-  psi = atan( sqrt(v[1] * v[1] + v[2] * v[2]) );
-
-  if (v[1] == 0. && v[2] == 0.)
-    theta = 0.;
-  else
-    theta = atan2(-v[2], -v[1]);
-  
-  u0[0] = cos(psi);
-  u0[1] = cos(theta) * sin(psi);
-  u0[2] = sin(theta) * sin(psi);
+  //  u0[1] = sin( x2 * 2. * M_PI / (param_x2end - param_x2start) );
+  /* u0[1] = 0.; */
+  /* u0[2] = 0.; */
 }
 
-/* unit vector in direction of spatial correlation */
-static void set_u1(double* u1, double x0, double x1, double x2)
+/* unit vectors in direction of major and minor axes */
+static void set_u1_u2(double* u1, double* u2, double x0, double x1, double x2)
 {
   double theta;
-
+  
+  u1[0] = 0.;
+  u2[0] = 0.;
+  
   if (x1 == 0 && x2 == 0) {
-    u1[0] = 0.;
     u1[1] = 0.;
     u1[2] = 0.;
+    
+    u2[1] = 0.;
+    u2[2] = 0.;
   }
   else {
     theta = atan2(x2, x1) +
       copysign( -M_PI / 2. + M_PI / 9., w_keplerian(x0, x1, x2) );
+    
+    /* double dx0 = (param_x0end - param_x0start) / 512.; */
     /* theta = atan2(1, dx0 * 2. * M_PI * */
     /* 		  cos(x2 * 2. * M_PI / (param_x2end - param_x2start) ) */
     /* 		  / (param_x2end - param_x2start) ); */
     
-    u1[0] = 0.;
     u1[1] = cos(theta);
     u1[2] = sin(theta);
+    
+    u2[1] = -sin(theta);
+    u2[2] = cos(theta);
   }
+
+  /* if (x1 > 2. * x2 + 10) */
+  /*   theta = atan(0.5); */
+  /* else if (x1 > -2. * x2 + 10) */
+  /*   theta = atan(-0.5); */
+  /* else */
+  /*   theta = M_PI / 2.; */
+  
+  /* u1[1] = cos(theta); */
+  /* u1[2] = sin(theta); */
+
+  /* u2[1] = -sin(theta); */
+  /* u2[2] = cos(theta); */
 }
 
 static void set_h(double h[3][3], double x0, double x1, double x2)
 {
   int i, j;
-  double u0[3], u1[3];
+  double u0[3], u1[3], u2[3];
 
   set_u0(u0, x0, x1, x2);
-  set_u1(u1, x0, x1, x2);
+  set_u1_u2(u1, u2, x0, x1, x2);
   
-  double gamm0, gamm1, beta0, beta1;
+  double lam0, lam1, lam2; /* temporal, major, minor correlation lengths */
 
-  gamm0 = param_r02 * corr_time(x0, x1, x2);
-  beta0 = (1. - param_r02) * corr_time(x0, x1, x2);
-  gamm1 = param_r12 * corr_length(x0, x1, x2);
-  beta1 = (1. - param_r12) * corr_length(x0, x1, x2);  
-
+  lam0 = corr_time(x0, x1, x2);
+  lam1 = corr_length(x0, x1, x2);
+  lam2 = param_r12 * lam1;
+  
   for (i = 0; i < 3; i++) {
     for (j = 0; j < 3; j++) {
-      h[i][j] = beta0 * u0[i] * u0[j] + beta1 * u1[i] * u1[j];
-      if (i == j)
-	h[i][j] += gamm0 + (i == 0 ? 0. : gamm1);
+      h[i][j] = lam0 * lam0 * u0[i] * u0[j]
+	+ lam1 * lam1 * u1[i] * u1[j]
+	+ lam2 * lam2 * u2[i] * u2[j];
     }
   }
 }
@@ -239,7 +263,7 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
   int i;
   int nvalues = ni * nj * nk;
 
-  double x0, x1, x2, r;
+  double x0, x1, x2, scaling;
 
   int gridi, gridj, gridk;
 
@@ -254,8 +278,14 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
     x1 = param_x1start + dx1 * gridj;
     x2 = param_x2start + dx2 * gridi;
 
-    r = sqrt(x1 * x1 + x2 * x2);
+    //    double r = sqrt(x1 * x1 + x2 * x2);
+
+    /* white noise scaled by 4th root of determinant of Lambda
+       det Lambda = l0^2*l1^2*l2^2 */
+    scaling = corr_time(x0, x1, x2) * corr_length(x0, x1, x2)
+      * param_r12 * corr_length(x0, x1, x2); 
+    scaling = sqrt(scaling); 
     
-    values[i] = /* pow(r, 1.5) * */ gsl_ran_gaussian_ziggurat(rstate, 1.);
+    values[i] = gsl_ran_gaussian_ziggurat(rstate, 1.) * scaling;
   }
 }

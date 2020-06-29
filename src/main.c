@@ -449,6 +449,11 @@ int main (int argc, char *argv[])
 	    lc_raw[k] += raw[l] * area;
 	    lc_env[k] += env[l] * area;
 
+	    if (raw[l] < min_raw)
+	      min_raw = raw[l];
+	    if (raw[l] > max_raw)
+	      max_raw = raw[l];
+	    
 	    if (env[l] < min_env)
 	      min_env = env[l];
 	    if (env[l] > max_env)

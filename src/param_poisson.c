@@ -29,6 +29,9 @@ void param_coeff(double* coeff, double x0, double x1, double x2, double dx0,
   coeff[3] = -2. * (coeff[0] + coeff[1] + coeff[2]);
 }
 
+#include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
+
 void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
 		      int pi, int pj, int pk, int npi, int npj, int npk,
 		      double dx0, double dx1, double dx2)
@@ -51,6 +54,19 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
     x1 = param_x1start + dx1 * gridj;
     x2 = param_x2start + dx2 * gridi;
     
-    values[i] = -3. * sin(x0) * sin(x1) * sin(x2);
+    //    values[i] = -3. * sin(x0) * sin(x1) * sin(x2);
+    values[i] = -14. * sin(3. * x0) * sin(2. * x1) * sin(x2);
   }
 }
+
+/* void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk, */
+/*                       int pi, int pj, int pk, int npi, int npj, int npk, */
+/*                       double dx0, double dx1, double dx2) */
+/* { */
+/*   int i; */
+/*   int nvalues = ni * nj * nk; */
+
+/*   for (i = 0; i < nvalues; i++) { */
+/*     values[i] = /\* pow(r, 1.5) * *\/ gsl_ran_gaussian_ziggurat(rstate, 1.); */
+/*   } */
+/* } */
