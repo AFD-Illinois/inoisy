@@ -1,6 +1,7 @@
 #include "param.h"
 
 #include <math.h>
+#include <time.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
@@ -22,18 +23,21 @@ const double param_x2end   = 10.;
 /* Set default parameters */
 
 /* Mass in solar masses*/
-static double param_mass = 1.E6;
+static double param_mass  = 1.E6;
 /* Mdot in solar masses per year */
-static double param_mdot = 1.E-7;
+static double param_mdot  = 1.E-7;
 /* ratio of correlation length to local radius */
-static double param_lam  = 5.;
+static double param_lam   = 5.;
 /* product of correlation time and local Keplerian frequency */
-static double param_tau  = 1.;
+static double param_tau   = 1.;
 /* ratio of coefficients of major and minor axes of spatial correlation */
-static double param_r12  = 0.1;
+static double param_r12   = 0.1;
 /* cutoff radius */
-static double param_rct  = 0.5;
+static double param_rct   = 0.5;
+/* opening angle */
+static double param_theta = -M_PI / 2. + M_PI / 9.; 
 
+/* Read in parameters from input file */
 void param_read_params(char* filename)
 {
   /* hdf5_utils accesses a single global file at a time */
@@ -48,11 +52,13 @@ void param_read_params(char* filename)
     hdf5_read_single_val(&param_tau, "tau", H5T_IEEE_F64LE);
     hdf5_read_single_val(&param_r12, "r12", H5T_IEEE_F64LE);
     hdf5_read_single_val(&param_rct, "rct", H5T_IEEE_F64LE);
-
+    hdf5_read_single_val(&param_theta, "theta", H5T_IEEE_F64LE);
+    
     hdf5_close();
   }
 }
 
+/* Write out parameters to output file */
 void param_write_params(char* filename)
 {
   /* hdf5_utils accesses a single global file at a time */
@@ -64,6 +70,25 @@ void param_write_params(char* filename)
   hdf5_write_single_val(&param_tau, "tau", H5T_IEEE_F64LE);
   hdf5_write_single_val(&param_r12, "r12", H5T_IEEE_F64LE);
   hdf5_write_single_val(&param_rct, "rct", H5T_IEEE_F64LE);
+  hdf5_write_single_val(&param_theta, "theta", H5T_IEEE_F64LE);
+}
+
+/* Set format for name of output file
+   dir is the name of the output directory */
+void param_set_output_name(char* filename, int ni, int nj, int nk,
+			   int npi, int npj, int npk, char* dir)
+{
+  time_t rawtime;
+  struct tm * timeinfo;
+  char buffer[255];
+
+  time(&rawtime);
+  timeinfo = localtime(&rawtime);
+  
+  strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
+
+  sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir, model_name,
+	  npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
 }
 
 /* smooth cutoff at radius r0, where function has value f(r0) and slope
@@ -186,7 +211,7 @@ static void set_u1_u2(double* u1, double* u2, double x0, double x1, double x2)
   }
   else {
     theta = atan2(x2, x1) +
-      copysign( -M_PI / 2. + M_PI / 9., w_keplerian(x0, x1, x2) );
+      copysign( param_theta, w_keplerian(x0, x1, x2) );
     
     /* double dx0 = (param_x0end - param_x0start) / 512.; */
     /* theta = atan2(1, dx0 * 2. * M_PI * */

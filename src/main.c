@@ -148,8 +148,8 @@ int main (int argc, char *argv[])
 	arg_index++;
 	output = 0;
       }
-      else if ( strcmp(argv[arg_index], "-i") == 0 ||
-		strcmp(argv[arg_index], "-input") == 0 ) {
+      else if ( strcmp(argv[arg_index], "-p") == 0 ||
+		strcmp(argv[arg_index], "-params") == 0 ) {
 	arg_index++;
 	input_ptr = argv[arg_index];
       }
@@ -187,22 +187,22 @@ int main (int argc, char *argv[])
 	printf("\n");
 	printf("Usage: %s [<options>]\n", argv[0]);
 	printf("\n");
-	printf("  -n <n>                : General grid side length per processor (default: 32).\n");
-	printf("  -ni <n> (or nj/nk)    : Grid side length for specific side per processor\n");
-	printf("                          (default: 32). If both -n and -ni are specified, ni\n");
-	printf("                          will overwrite n for that side only. \n");
-	printf("  -pgrid <pi> <pj> <pk> : Layout of processor grid. (default: 1 x 1 x num_procs)\n");
-	printf("                          The product of pi * pj * pk must equal num_proc.\n");
-	printf("  -solver <ID>          : solver ID\n");
-	printf("                          0  - PCG with SMG precond (default)\n");
-	printf("                          1  - SMG\n");
-	printf("  -v <n_pre> <n_post>   : Number of pre and post relaxations (default: 1 1).\n");
-	printf("  -dryrun               : Run solver w/o data output.\n");
-	printf("  -input <file> (or -i) : Input file containing parameters and/or source field.\n");
-	// TODO read in source field and give options to choose
-	printf("  -output <dir> (or -o) : Output data in <dir> (default: ./)\n");
-	printf("  -timer                : Time each step on processor zero.\n");
-	printf("  -nrecur               : Number of recursions to apply to source field (default: 1).\n");
+	printf("  -n <n>                 : General grid side length per processor (default: 32).\n");
+	printf("  -ni <n> (or nj/nk)     : Grid side length for specific side per processor\n");
+	printf("                           (default: 32). If both -n and -ni are specified, ni\n");
+	printf("                           will overwrite n for that side only. \n");
+	printf("  -pgrid <pi> <pj> <pk>  : Processor grid layout (default: 1 x 1 x num_procs).\n");
+	printf("                           The product of pi * pj * pk must equal num_proc.\n");
+	printf("  -solver <ID>           : solver ID\n");
+	printf("                           0  - PCG with SMG precond (default)\n");
+	printf("                           1  - SMG\n");
+	printf("  -v <n_pre> <n_post>    : Number of pre and post relaxations (default: 1 1).\n");
+	printf("  -dryrun                : Run solver w/o data output.\n");
+	printf("  -params <file> (or -p) : Read in parameters from <file>.\n");
+	// TODO read in source field
+	printf("  -output <dir> (or -o)  : Output data in directory <dir> (default: ./).\n");
+	printf("  -timer                 : Time each step on processor zero.\n");
+	printf("  -nrecur                : Number of recursions to apply to source (default: 1).\n");
 	printf("\n");
 	printf("Sample run:     mpirun -np 8 poisson -n 32 -nk 64 -pgrid 1 2 4 -solver 1\n");
 	printf("                mpiexec -n 4 ./disk -n 128 -nj 32 -pgrid 2 2 1 -solver 0\n");
@@ -595,17 +595,8 @@ int main (int argc, char *argv[])
     char filename[255];		
     
     if (myid == 0) {
-      time_t rawtime;
-      struct tm * timeinfo;
-      char buffer[255];
+      param_set_output_name(filename, ni, nj, nk, npi, npj, npk, dir_ptr);
       
-      time(&rawtime);
-      timeinfo = localtime(&rawtime);
-      strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
-
-      sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir_ptr, model_name, 
-	      npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
-
       printf("%s\n\n", filename);
     }
     
