@@ -29,7 +29,7 @@ args = parser.parse_args()
 if not args.minmax and not args.stdev:
     args.minmax = True
 
-#args.filename = 'vis/128_128_512_2020_02_05_184118.h5'
+#args.filename = 'output/128_128_512_2020_02_05_184118.h5'
 #args.nstart   = 0
 #args.nend     = 1
 
@@ -99,11 +99,18 @@ if args.grid == 'logr':
 cmap = plt.get_cmap('afmhot')
 cmap.set_bad(color = 'black')
 
+plt.figure(figsize=(6,6))
+
 for i in range(args.nstart,args.nend):
-    var = data[i,:,:]
-    plt.pcolormesh(x,y,var, cmap=cmap, vmin=Min, vmax=Max)
-    plt.axis('scaled')  
-    plt.savefig(output+str(i)+'_'+args.dtype+'.png')
+    dataxy = np.transpose(data[i,:,:])
+    pcol = plt.pcolormesh(x,y,dataxy, cmap=cmap, vmin=Min, vmax=Max)
+    pcol.set_edgecolor('face')
+    plt.axis('scaled')
+    plt.xlim(x1start,x1end)
+    plt.ylim(x2start,x2end)
+    plt.tick_params(labelbottom=False, labelleft=False)
+    plt.savefig(output+args.dtype+'_'+str(i)+'.png')
+    # plt.savefig(output+args.dtype+'_'+str(i)+'.pdf', format='pdf', dpi=300)
     plt.clf()
 
 h5py.File.close(hf)
