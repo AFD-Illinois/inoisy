@@ -1,17 +1,40 @@
 #include "param.h"
 
 #include <math.h>
+#include <time.h>
 
 const char model_name[] = "poisson";
 
-const double param_mass    = 1.;
-const double param_mdot    = 1.;
 const double param_x0start = 0.;
 const double param_x0end   = 2. * M_PI;
 const double param_x1start = 0.;
 const double param_x1end   = 2. * M_PI;
 const double param_x2start = 0.;
 const double param_x2end   = 2. * M_PI;
+
+void param_read_params(char* filename)
+{
+}
+
+void param_write_params(char* filename)
+{
+}
+
+void param_set_output_name(char* filename, int ni, int nj, int nk,
+			   int npi, int npj, int npk, char* dir)
+{
+  time_t rawtime;
+  struct tm * timeinfo;
+  char buffer[255];
+
+  time(&rawtime);
+  timeinfo = localtime(&rawtime);
+  
+  strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
+
+  sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir, model_name,
+          npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
+}
 
 double param_env(double raw, double avg_raw, double var_raw,
 		 int i, int j, int k, int ni, int nj, int nk,
