@@ -34,7 +34,7 @@ static double param_tau   = 1.;
 static double param_r12   = 0.1;
 /* cutoff radius */
 static double param_rct   = 0.5;
-/* opening angle */
+/* opening angle, defined as 0 pointing radially outward */
 static double param_theta = -M_PI / 2. + M_PI / 9.; 
 
 /* Read in parameters from input file */
@@ -88,7 +88,7 @@ void param_set_output_name(char* filename, int ni, int nj, int nk,
   strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
 
   sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir, model_name,
-	  npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
+	  npj * nj, npi * ni, npk * nk, buffer, gsl_rng_default_seed);
 }
 
 /* smooth cutoff at radius r0, where function has value f(r0) and slope
@@ -184,7 +184,7 @@ static double corr_time(double x0, double x1, double x2)
 /* time correlation vector (1, v1, v2) */
 static void set_u0(double* u0, double x0, double x1, double x2)
 {
-  double omega = -w_keplerian(x0, x1, x2);
+  double omega = w_keplerian(x0, x1, x2);
   u0[0] = 1.;
   u0[1] = -x2 * omega;
   u0[2] = x1 * omega;
@@ -211,7 +211,7 @@ static void set_u1_u2(double* u1, double* u2, double x0, double x1, double x2)
   }
   else {
     theta = atan2(x2, x1) +
-      copysign( param_theta, w_keplerian(x0, x1, x2) );
+      copysign( param_theta, -1. * w_keplerian(x0, x1, x2) );
     
     /* double dx0 = (param_x0end - param_x0start) / 512.; */
     /* theta = atan2(1, dx0 * 2. * M_PI * */

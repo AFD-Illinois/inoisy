@@ -33,7 +33,7 @@ void param_set_output_name(char* filename, int ni, int nj, int nk,
   strftime(buffer, 255, "%Y_%m_%d_%H%M%S", timeinfo);
 
   sprintf(filename, "%s/%s_%d_%d_%d_%s_%05lu.h5", dir, model_name,
-          npi * ni, npj * nj, npk * nk, buffer, gsl_rng_default_seed);
+          npk * nk, npj * nj, npi * ni, buffer, gsl_rng_default_seed);
 }
 
 double param_env(double raw, double avg_raw, double var_raw,
