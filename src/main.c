@@ -53,10 +53,13 @@ int main (int argc, char *argv[])
   int num_recursions; // number of recursions
   double final_res_norm;
   
-  int output, timer;
+  int output, timer, dump;
 
   char* dir_ptr;
-  char* input_ptr;
+  char* params_ptr;
+  char* source_ptr;
+
+  char filename[255];
   
   /* Initialize MPI */
   MPI_Init(&argc, &argv);
@@ -73,10 +76,13 @@ int main (int argc, char *argv[])
   n_post = 1;
   output = 1;                  /* output data by default */
   timer  = 0;
+  dump   = 0;                  /* outputing intermediate steps if nrecur > 1
+				  off by default */
   num_recursions = 1;
   char* default_dir = ".";     /* output in current directory by default */
   dir_ptr   = default_dir;
-  input_ptr = NULL;
+  params_ptr = NULL;
+  source_ptr = NULL;
   
   /* Initiialize rng */
   const gsl_rng_type *T;
@@ -148,20 +154,35 @@ int main (int argc, char *argv[])
 	arg_index++;
 	output = 0;
       }
+      else if ( strcmp(argv[arg_index], "-ps") == 0 ||
+		strcmp(argv[arg_index], "-sp") == 0 ) {
+	arg_index++;
+	params_ptr = argv[arg_index];
+	source_ptr = argv[arg_index++];
+      }
       else if ( strcmp(argv[arg_index], "-p") == 0 ||
 		strcmp(argv[arg_index], "-params") == 0 ) {
 	arg_index++;
-	input_ptr = argv[arg_index];
+	params_ptr = argv[arg_index++];
+      }
+      else if ( strcmp(argv[arg_index], "-s") == 0 ||
+		strcmp(argv[arg_index], "-source") == 0 ) {
+	arg_index++;
+	source_ptr = argv[arg_index++];
       }
       else if ( strcmp(argv[arg_index], "-o") == 0 ||
 		strcmp(argv[arg_index], "-output") == 0 ) {
 	arg_index++;
-	dir_ptr = argv[arg_index];
+	dir_ptr = argv[arg_index++];
       } // TODO check that directory exists before solving rather than later
         // TODO remove trailing '/' if it exists
       else if ( strcmp(argv[arg_index], "-timer") == 0 ) {
 	arg_index++;
 	timer = 1;
+      }
+      else if ( strcmp(argv[arg_index], "-dump") == 0 ) {
+	arg_index++;
+	dump = 1;
       }
       else if ( strcmp(argv[arg_index], "-nrecur") == 0 ) {
 	arg_index++;
@@ -199,9 +220,11 @@ int main (int argc, char *argv[])
 	printf("  -v <n_pre> <n_post>    : Number of pre and post relaxations (default: 1 1).\n");
 	printf("  -dryrun                : Run solver w/o data output.\n");
 	printf("  -params <file> (or -p) : Read in parameters from <file>.\n");
-	// TODO read in source field
+	printf("  -source <file> (or -s) : Read in source field from <file.\n");
+	printf("                           Can be combined by using -ps or -sp\n");
 	printf("  -output <dir> (or -o)  : Output data in directory <dir> (default: ./).\n");
 	printf("  -timer                 : Time each step on processor zero.\n");
+	printf("  -dump                  : Output intermediate steps if nrecur > 1).\n");
 	printf("  -nrecur                : Number of recursions to apply to source (default: 1).\n");
 	printf("\n");
 	printf("Sample run:     mpirun -np 8 poisson -n 32 -nk 64 -pgrid 1 2 4 -solver 1\n");
@@ -228,13 +251,15 @@ int main (int argc, char *argv[])
   /* Set dx0, dx1, dx2 */
   model_set_spacing(&dx0, &dx1, &dx2, ni, nj, nk, npi, npj, npk);
 
-  /* Read parameters from input file */
-  param_read_params(input_ptr);
+  /* Read parameters from params file if defined */
+  if ( params_ptr != NULL )
+    param_read_params(params_ptr);
+  // TODO check source_ptr exists and all parameters exist inside
   
   /* Figure out processor grid (npi x npj x npk). Processor position 
      indicated by pi, pj, pk. Size of local grid on processor is 
      (ni x nj x nk) */
-
+  
   pk = myid / (npi * npj);
   pj = (myid - pk * npi * npj) / npi;
   pi = myid - pk * npi * npj - pj * npi;
@@ -303,9 +328,26 @@ int main (int argc, char *argv[])
     HYPRE_StructVectorInitialize(b);
     HYPRE_StructVectorInitialize(x);
 		
-    /* Set the values */
-    param_set_source(values, rstate, ni, nj, nk, pi, pj, pk, npi, npj, npk,
-		     dx0, dx1, dx2);
+    /* Set the source term */
+    if ( source_ptr == NULL )
+      param_set_source(values, rstate, ni, nj, nk, pi, pj, pk, npi, npj, npk,
+		       dx0, dx1, dx2);
+    else {
+      hdf5_open(source_ptr);
+      
+      hdf5_set_directory("/data/");
+
+      hsize_t fdims[3]  = {npk * nk, npj * nj, npi * ni};
+      hsize_t fstart[3] = {pk * nk, pj * nj, pi * ni};
+      hsize_t fcount[3] = {nk, nj, ni};
+      hsize_t mdims[3]  = {nk, nj, ni};
+      hsize_t mstart[3] = {0, 0, 0};
+      
+      hdf5_read_array(values, "data_raw", 3, fdims, fstart, fcount,
+		      mdims, mstart, H5T_NATIVE_DOUBLE);
+
+      hdf5_close();
+    }
     
     HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
 		
@@ -323,6 +365,21 @@ int main (int argc, char *argv[])
   if ( (myid == 0) && (timer) )
     printf("Struct vector assembled: t = %lf\n\n",
 	   (double)(check_t - start_t) / CLOCKS_PER_SEC);
+
+  /* Setup output file */
+  
+  if (myid == 0)
+    param_set_output_name(filename, ni, nj, nk, npi, npj, npk, dir_ptr);
+
+  MPI_Bcast(&filename, 255, MPI_CHAR, 0, MPI_COMM_WORLD);  
+  
+  // TODO create directory if doesn't exist
+  if (output) {
+    hdf5_create(filename);
+    hdf5_set_directory("/");
+    hdf5_make_directory("data");
+    hdf5_set_directory("/data/");
+  }
   
   /* Set up and use a struct solver */
   if (solver_id == 0) {
@@ -361,6 +418,20 @@ int main (int argc, char *argv[])
 	
 	HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);  
 
+	if (dump) {
+	  hsize_t fdims[3]  = {npk * nk, npj * nj, npi * ni};
+	  hsize_t fstart[3] = {pk * nk, pj * nj, pi * ni};
+	  hsize_t fcount[3] = {nk, nj, ni};
+	  hsize_t mdims[3]  = {nk, nj, ni};
+	  hsize_t mstart[3] = {0, 0, 0};
+
+	  char step[255];
+	  sprintf(step, "step_%d", j);
+	  
+	  hdf5_write_array(values, step, 3, fdims, fstart, fcount,
+			   mdims, mstart, H5T_NATIVE_DOUBLE);
+	}
+	
 	HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
 	
 	for (i = 0; i < nvalues; i ++)
@@ -420,15 +491,20 @@ int main (int argc, char *argv[])
 
 	HYPRE_StructVectorGetBoxValues(x, ilower, iupper, values);  
 
-	HYPRE_StructVectorDestroy(b);
-	HYPRE_StructVectorDestroy(x);
+	if (dump) {
+	  hsize_t fdims[3]  = {npk * nk, npj * nj, npi * ni};
+	  hsize_t fstart[3] = {pk * nk, pj * nj, pi * ni};
+	  hsize_t fcount[3] = {nk, nj, ni};
+	  hsize_t mdims[3]  = {nk, nj, ni};
+	  hsize_t mstart[3] = {0, 0, 0};
 
-	HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &b);
-	HYPRE_StructVectorCreate(MPI_COMM_WORLD, grid, &x);
-	
-	HYPRE_StructVectorInitialize(b);
-	HYPRE_StructVectorInitialize(x);
-    
+	  char step[255];
+	  sprintf(step, "step_%d", j);
+	  
+	  hdf5_write_array(values, step, 3, fdims, fstart, fcount,
+			   mdims, mstart, H5T_NATIVE_DOUBLE);
+	}
+
 	HYPRE_StructVectorSetBoxValues(b, ilower, iupper, values);
 	
 	for (i = 0; i < nvalues; i ++)
@@ -439,7 +515,7 @@ int main (int argc, char *argv[])
 	// TODO create option to print successive steps
 	
 	free(values);
-
+	
 	HYPRE_StructVectorAssemble(b);
 	HYPRE_StructVectorAssemble(x);
       }
@@ -592,21 +668,9 @@ int main (int argc, char *argv[])
     }
 
     /* File i/o */
-    char filename[255];		
-    
-    if (myid == 0) {
-      param_set_output_name(filename, ni, nj, nk, npi, npj, npk, dir_ptr);
-      
-      printf("%s\n\n", filename);
-    }
-    
-    MPI_Bcast(&filename, 255, MPI_CHAR, 0, MPI_COMM_WORLD);
-    // TODO create directory if doesn't exist
-    hdf5_create(filename);
-    
+
     /* Save solution to output file*/
     hdf5_set_directory("/");
-    hdf5_make_directory("data");
     hdf5_set_directory("/data/");
     // TODO create further heirarchy in file structure
 
@@ -687,6 +751,9 @@ int main (int argc, char *argv[])
     if ( (myid == 0) && (timer) )
       printf("Data output: t = %lf\n\n",
 	     (double)(check_t - start_t) / CLOCKS_PER_SEC);
+
+    if (myid == 0)
+      printf("%s\n\n", filename);
     
     free(raw);
     free(env);
