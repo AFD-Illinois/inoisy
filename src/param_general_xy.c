@@ -323,15 +323,22 @@ void param_coeff(double* coeff, double x0, double x1, double x2, double dx0,
 
 void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
 		      int pi, int pj, int pk, int npi, int npj, int npk,
-		      double dx0, double dx1, double dx2)
+		      double dx0, double dx1, double dx2, int nrecur)
 {
   int i;
   int nvalues = ni * nj * nk;
 
-  double x0, x1, x2, scaling;
+  double x0, x1, x2;
 
   int gridi, gridj, gridk;
 
+  /* White noise scaled by N
+     N = sqrt( sqrt(dL) * (4 Pi)^(D/2) * Gamma(alpha) / Gamma(nu)
+     dL = det Lambda = l0^2*l1^2*l2^2 */
+  
+  double scaling = pow(4. * M_PI, 3. / 2.) * tgamma(2. * nrecur)
+    / tgamma(2. * nrecur - 3. / 2. ); 
+  
   for (i = 0; i < nvalues; i++) {
     gridk = i / (ni * nj);
     gridj = (i - ni * nj * gridk) / ni;
@@ -345,11 +352,9 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
 
     //    double r = sqrt(x1 * x1 + x2 * x2);
 
-    /* white noise scaled by 4th root of determinant of Lambda
-       det Lambda = l0^2*l1^2*l2^2 */
-    scaling = corr_time(x0, x1, x2) * corr_length(x0, x1, x2)
-      * param_r12 * corr_length(x0, x1, x2); 
-    scaling = sqrt(scaling); 
+    scaling *= corr_time(x0, x1, x2) * corr_length(x0, x1, x2)
+      * param_r12 * corr_length(x0, x1, x2);
+    scaling = fmax( sqrt(scaling), SMALL );
     
     values[i] = gsl_ran_gaussian_ziggurat(rstate, 1.) * scaling;
   }

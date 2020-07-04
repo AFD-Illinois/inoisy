@@ -57,7 +57,7 @@ void param_coeff(double* coeff, double x0, double x1, double x2, double dx0,
 
 void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
 		      int pi, int pj, int pk, int npi, int npj, int npk,
-		      double dx0, double dx1, double dx2)
+		      double dx0, double dx1, double dx2, int nrecur)
 {
   int i;
   int nvalues = ni * nj * nk;

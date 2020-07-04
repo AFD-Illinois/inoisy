@@ -331,7 +331,7 @@ int main (int argc, char *argv[])
     /* Set the source term */
     if ( source_ptr == NULL )
       param_set_source(values, rstate, ni, nj, nk, pi, pj, pk, npi, npj, npk,
-		       dx0, dx1, dx2);
+		       dx0, dx1, dx2, num_recursions);
     else {
       hdf5_open(source_ptr);
       
