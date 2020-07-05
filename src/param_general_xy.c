@@ -336,11 +336,13 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
      N = sqrt( sqrt(dL) * (4 Pi)^(D/2) * Gamma(alpha) / Gamma(nu)
      dL = det Lambda = l0^2*l1^2*l2^2 */
   
-  double scaling = pow(4. * M_PI, 3. / 2.) * tgamma(2. * nrecur)
+  double factor = pow(4. * M_PI, 3. / 2.) * tgamma(2. * nrecur)
     / tgamma(2. * nrecur - 3. / 2. ); 
   
   for (i = 0; i < nvalues; i++) {
-    gridk = i / (ni * nj);
+		double scaling;
+
+		gridk = i / (ni * nj);
     gridj = (i - ni * nj * gridk) / ni;
     gridi = i - ni * nj * gridk + (pi - gridj) * ni;
     gridj += pj * nj;
@@ -352,7 +354,7 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
 
     //    double r = sqrt(x1 * x1 + x2 * x2);
 
-    scaling *= corr_time(x0, x1, x2) * corr_length(x0, x1, x2)
+    scaling = factor * corr_time(x0, x1, x2) * corr_length(x0, x1, x2)
       * param_r12 * corr_length(x0, x1, x2);
     scaling = fmax( sqrt(scaling), SMALL );
     
