@@ -8,10 +8,10 @@ Requires HYPRE, HDF5, and MPI.
 Compile with:   
 ```make all```  
 or  
-```make <model name> e.g. make disk```
+```make <model name> e.g. make general_xy```
 
 Sample run:     
-```mpirun -np 8 disk -n 64 -solver 1 -pgrid 4 2 1 -output data```  
+```mpirun -np 8 general_xy -n 64 -solver 1 -pgrid 4 2 1 -output data```  
 ```mpiexec -n 4 ./poisson -n 32 -solver 0 -timer -dryrun```
 
 To see options: use option help, -help, or --help
@@ -27,8 +27,8 @@ The output is in ```'<output_directory>/<model_name>_<grid_dimensions>_<date_and
 
 To add a model, create a ```'param_<model_name>.c'``` and ```'model_<model_name>.c'``` following the structure of the other models, and add the ```<model_name>``` to the list of models in the Makefile.
 
-Current models: poisson, general_xy, disk_xy, disk_logr,
-                noisy_uniform, noisy_disk
+Current models: poisson, general_xy, 
+Old models: disk_xy, disk_logr, noisy_uniform, noisy_disk
 
 The default parameters for poisson are useful for testing the program. The solution should match sin(x0)sin(x1)sin(x2) on a periodic domain {0,2Pi} x {0,2Pi} x {0,2Pi}. 
 
