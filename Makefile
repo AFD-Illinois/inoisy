@@ -23,7 +23,8 @@ LFLAGS   = $(LINKOPTS) $(LIBS)
 
 # List of all programs to be compiled
 
-EXE = poisson disk_logr disk_xy noisy_unif noisy_disk general_xy
+EXE = poisson general_xy
+# disk_logr disk_xy noisy_unif noisy_disk are deprecated, located in src/old_models/
 
 SRC := $(addprefix $(SRC_DIR)/,main.c hdf5_utils.c model_%.c param_%.c)
 OBJ := $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
