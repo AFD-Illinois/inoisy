@@ -4,6 +4,7 @@
 Generates Gaussian random fields (GRFs) following Lindgren et al. 2011.
 
 Requires HYPRE, HDF5, and MPI.
+The flag HYPRE_DIR may need to be added or adjusted in the Makefile to point to the correct hypre directory. 
 
 Compile with:   
 ```make all```  
