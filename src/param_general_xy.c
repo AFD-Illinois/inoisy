@@ -348,7 +348,7 @@ void param_set_source(double* values, gsl_rng* rstate, int ni, int nj, int nk,
     gridj += pj * nj;
     gridk += pk * nk;
 
-    x0 = param_x0start + dx0 + gridk;
+    x0 = param_x0start + dx0 * gridk;
     x1 = param_x1start + dx1 * gridj;
     x2 = param_x2start + dx2 * gridi;
 
